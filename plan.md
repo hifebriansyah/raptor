@@ -1,211 +1,114 @@
-# Mecha Raptor — Game Design & Technical Plan
+# Mecha Raptor — Next-Gen Master Plan (Godot 4 / LEGO City–Style Open World)
 
-## 1. High Concept
-
-A lighthearted, stylised 3D low-poly open-world sandbox game ("GTA meets cosy backyard sci-fi") built for the web with **Three.js + TypeScript**.
-
-You play as an eccentric **Professor** who built a **Mecha Raptor** in his lab purely for fun. Between flying over rooftops, putting out neighbourhood fires with a mounted water machine gun, transforming into a thruster-boosted race mode to outrun cars, and dealing with thieves—or the Raptor's secret addiction to Grandma's cookies—every day in the neighbourhood brings playful chaos.
-
-### Design Pillars
-- **Toybox Joy First:** Switching between walking, flying, racing, and spraying water should feel snappy, expressive, and rewarding.
-- **Living Little Neighbourhood:** A compact, readable GTA-style open map where emergent events (fires, street races, lab break-ins) happen naturally around you.
-- **Charming Personality:** The Mecha Raptor isn't just a vehicle—it has quirks, parks at the lab, and sneaks off to Grandma's attic when it misses cookies.
+> **Premise & Core DNA:** Rebuild and expand the Three.js prototype into a full **Godot 4** open-world sandbox modelled after **LEGO City Undercover**—bright, colourful toy-brick city architecture, multi-height districts, elevated train, roaming vehicles & boats, Super Builds, and enterable buildings—while keeping the prototype's signature ability to fly all the way up into **Space**. You are an **eccentric 36-year-old Professor** having fun in town with his homemade **Mecha Raptor**—putting out fires, fighting thugs and zapping them to jail with a Teleport Gun, riding trains, and exploring buildings whenever you feel like it.
 
 ---
 
-## 2. Characters & NPCs
+## 1. Engine Shift: Moving to Godot 4
 
-| Character | Role | Behaviour & Interactions |
+- **Why Godot 4:** Replaces the Three.js + Rapier prototype for smoother streaming/LOD transitions (land-to-space without culling pops), native multi-scene/sub-scene loading for enterable buildings, sculpted multi-height terrain, built-in `CharacterBody3D` / `VehicleBody3D` / Jolt physics, `AnimationTree` (combo combat, freefall pose, Hulkbuster assembly), and clean 2D UI + dialogue portrait support.
+- **Prototype Reference:** The current Three.js codebase (`src/`) serves as the playable prototype & gameplay reference for tuning speeds, modes, fires, races, and events.
+
+---
+
+## 2. Characters, Lore & Routines
+
+| Character | Updated Lore | Behaviour & Routine |
 | --- | --- | --- |
-| **The Professor** | Playable Protagonist | Walks/runs on foot, mounts/dismounts the Mecha Raptor, parks it in the lab, interacts with NPCs, and investigates clues when the Raptor goes missing. |
-| **Mecha Raptor** | Companion & Multi-Mode Mount | Walks/leaps, **Flies**, transforms into **Race Mode** (with thrusters), and fires a **Water Machine Gun**. Has a subtle personality—sometimes wanders off to Grandma's house for cookies. |
-| **Grandma** | Mystic Baker & Quest Anchor | Lives in Grandma's House. Gives the Professor a **Premonition** (vision/map clue) whenever the Raptor is stolen, and bakes cookies that accidentally lure the Raptor into her attic. |
-| **Grandchildren (Boy & Girl NPCs)** | Neighbourhood Kids | Hang out around Grandma's yard and the neighbourhood. Offer playful dialogue, gossip/hints (e.g., *"I heard metallic crunching upstairs!"* or *"A shady van sped past the lab!"*), and optional mini-challenges. |
-| **Lab Thieves** | Antagonists | Periodically attempt to break into the Professor's Lab when the Raptor is parked (especially while the Professor is away). If successful, they stash the Raptor at a random hideout on the map. |
-| **Traffic / Rival Drivers** | Ambient & Race NPCs | Drive along neighbourhood roads; certain sporty cars trigger spontaneous or checkpoint street races when approached in Race Mode. |
+| **The Professor** | **36 years old** — energetic young inventor & eccentric dad just having fun with his creations. | Walks, sprints, punches/kicks in combos, uses 5 Lab Guns, skydives, drives/rides vehicles & boats, mounts the Raptor. |
+| **Prof's Wife** | Playful partner who **loves wearing a goofy Godzilla costume** (like the LEGO T-Rex mascot suit, face peeking out the dino mouth). | Stomps cheerfully around town/park/Lab on her daily routine, playfully roars at pedestrians, cheers on the Raptor (and becomes a hilarious giant kaiju if zapped with the Big Gun!). |
+| **Mecha Raptor** | Homemade multi-mode companion (`Walk`, `Flight`, `Race`, plus **Hulkbuster Giant Mode** — *Boat mode removed*). | Sniffs around when idle, follows on foot or **flies alongside when you ride a sea boat**, can be abducted **anywhere** if left behind. |
+| **Two Sons (Ages 9 & 11)** | The Professor's two energetic kids (replacing the old "grandchildren" lore). | Follow daily routines (school/park/arcade/Grandma's yard), drop gossip/clues, and challenge you to mini-games. |
+| **Grandma (Prof's Mother)** | Actually the **Professor's mother**—he calls her "Grandma" out of habit because his 9- and 11-year-old sons call her Grandma. | Daily routine (kitchen/porch/market/garden); bakes cookies/treats, gives **Premonitions** when the Raptor goes missing. |
+| **Named Town NPCs** | Shopkeepers, Train Conductor, Rival Racers, Police Chief, etc. | Follow time-of-day routines (home → work → park/café). |
+
+- **Character & NPC Art Style (No Minifigures):** Characters and NPCs do **not** use LEGO minifigure proportions (no cylinder heads, claw hands, or stiff brick legs). Instead, they use a clean **stylized low-poly human look** with natural proportions and articulated joints (head, torso, arms, hands, legs, feet, hair, coats/costumes) so punch/kick combos, skydiving, sitting in cars, and the Wife's Godzilla mascot suit animate fluidly.
+- **2D Dialogue Portraits:** Every named NPC interaction displays a **2D character portrait frame** (using placeholder images now, ready to swap in custom 2D art later).
 
 ---
 
-## 3. Open-World Map & Landmarks (GTA-Style Layout)
+## 3. Prototype Bugs & Core Changes to Fix
 
-A compact, dense low-poly island/town (~600m × 600m) designed for fast traversal on foot, by car-mode, and in the air:
+Every known issue from the Three.js build is addressed directly in the Godot design:
 
-1. **The Professor's Lab (Home Base)**
-   - **Parking Bay:** Designated pad to park, repair, and recharge water/thruster fuel.
-   - **Security Vulnerability:** Thieves can pick the lock or smash in if you leave the Raptor unattended for too long (future upgrade: alarms/locks).
-2. **Grandma's House & Attic**
-   - **Downstairs / Porch:** Where Grandma, the Boy NPC, and the Girl NPC hang out. Trigger dialogue for **Premonitions** and hints.
-   - **The Attic:** Accessible via stairs/ladder or roof hatch—where the Mecha Raptor hides when it sneaks off for **Grandma's cookies**.
-3. **Suburban Neighbourhood & Town Centre**
-   - Houses, shops, parks, and alleys where **dynamic fire events** break out.
-   - Water hydrants / fountains / riverfront for quick water refills.
-4. **Ring Road & Coastal Race Loop**
-   - Wide roads, ramps, and shortcuts tailored for **Race Mode + Thrusters** and high-speed chases against rival cars.
-5. **Thief Hideouts (3–5 Rotating Spots)**
-   - Abandoned warehouse, dockyard, junkyard, forest clearing—used as destinations when the Raptor is stolen.
+1. **Smooth Land ↔ Space Transition:** Replace the hard 190 m / 400 m altitude culling pop with continuous atmospheric sky/star shader blending, gradual distance fog, and smooth Godot LOD / impostors for the city below.
+2. **Real Raptor ↔ Vehicle & NPC Collisions:** Raptor, traffic vehicles, and NPCs have proper solid collision layers—normal bumps push, stop, or knock cleanly instead of ghosting through each other (while Turbo Ram / Megaphone Gun still fling them).
+3. **Meaningful Treats / Cookies:** Give treats real gameplay purpose—feed the Raptor for instant thruster/stamina refill, on-demand **Sugar Rush**, healing/happiness, or toss treats as a distraction/lure (and keeping treats stocked prevents attic cookie raids).
+4. **Meteor Fall = Raptor Only:** The Professor falling alone **never** triggers a blazing meteor fall. Only the **Mecha Raptor** (solo or with Professor riding) builds up into a fiery meteor impact.
+5. **Parachute Cancel & LEGO 2 Skydive Pose:** Pressing `Space` while parachuting **removes/detaches the parachute** and switches the Professor into a **LEGO Marvel 2–style spread-eagle freefall pose** (press `Space` again to re-deploy before landing).
+6. **Abduction Anywhere:** Thieves can snatch the Mecha Raptor **anywhere you leave it behind** around the world—not only when parked at the Lab.
+7. **Proper Building-to-Character Scale:** Re-proportion doorways (~2.4–2.8 m), storey heights (~3.5–4 m), sidewalks, vehicles, and towers to match the Professor (1.75 m) and Mecha Raptor naturally.
+8. **4-Lane Boulevards & 2-Lane Streets:** Keep residential/side roads at 2 lanes and widen main city avenues / ring highway stretches into **4-lane roads**.
+9. **Remove Raptor Boat Mode + Fly-Along Support:** Remove `Boat` mode from the Mecha Raptor. Instead, **ambient boats roam the sea** (boardable/drivable like GTA vehicles), and if Follow (`F`) is active while the Professor sails a boat, the Raptor **follows in Flight mode**.
+10. **Transparent Car Glass & Visible Drivers:** Replace opaque car cabs/windows with **transparent windshields & side windows**, an interior seat/steering wheel, and a **visible driver** inside (traffic NPCs sit inside their cars, and the **Professor is visibly seated inside** while driving instead of hidden).
+11. **Camera Zoom In / Out / Reset:** Smoothly zoom the third-person camera closer or further away (mouse wheel / `+` `-` or pad bindings, clamped cleanly indoors vs. outdoors vs. Hulkbuster Giant Mode), plus a one-press **Reset Camera Zoom** button (e.g. middle-click / dedicated key).
 
 ---
 
-## 4. Core Gameplay Systems
+## 4. World Structure & Core Pillars
 
-### 4.1 Professor & Lab Parking Loop
-- **On-Foot Controls:** Move, jump, interact (`E` / `F`), mount/dismount Mecha Raptor.
-- **Parking at the Lab:** Walking or riding onto the Lab pad parks the Raptor cleanly, refills water & thruster energy, and marks the Raptor as "Parked at Lab".
-- **On-Foot Exploration:** Even without the Raptor, the Professor can sprint, use a lab scooter/bicycle (optional fallback for getting to Grandma's), and talk to NPCs.
-
-### 4.2 Mecha Raptor Modes & Abilities
-Seamless mode switching with distinct silhouettes, animations, and camera feel:
-
-1. **Raptor Walk / Agile Mode (Default)**
-   - Fast bipedal sprint, high jump, tight turning in alleys.
-2. **Flight Mode**
-   - Spreads mechanical wings/hover-jets to take off from anywhere.
-   - Smooth 3D arcade flight (pitch/yaw/boost, hover to aim water).
-   - Ideal for spotting smoke plumes across the open map and reaching rooftops or Grandma's attic window.
-3. **Race Mode + Thruster**
-   - Raptor folds into a sleek low-slung mecha-car / cyber-racer chassis.
-   - High top speed, drifting around corners, and **Thruster Boost** (flame/plasma burst with recharge bar) to beat rival cars and hit stunt ramps.
-4. **Water Machine Gun (Firefighting)**
-   - Available in Walk and Flight (hover-strafe) modes.
-   - Rapid-fire pressurised water stream/projectiles with splash particles.
-   - Extinguishes fire nodes by reducing each fire's intensity meter to zero.
-
-### 4.3 Dynamic World Events
-
-#### A. Neighbourhood Fires
-- **Trigger:** Periodic timer + random selection from neighbourhood buildings, bins, or park areas.
-- **Feedback:** Tall smoke column visible from across the map + minimap icon + optional alert from the kids/radio.
-- **Resolution:** Fly or race to the scene and douse all fire hotspots with the Water Machine Gun before the timer expires to earn Lab Points / Cookie Tokens.
-
-#### B. Missing Raptor Mystery (Two Distinct Branches)
-When the Raptor is parked at the Lab (or left unattended) and goes missing, the HUD alerts the Professor: *"Mecha Raptor is missing from the Lab!"* — creating a fun detective twist because **you don't immediately know if it was stolen or went for cookies**:
-
-1. **Branch 1: Stolen by Thieves**
-   - **Trigger:** Thieves break into the Lab (leaving footprints/broken lock clues).
-   - **Loop:**
-     1. Visit **Grandma's House** and talk to Grandma.
-     2. Grandma enters a quirky **Premonition** cutscene/overlay (crystal ball / tea leaves / glowing minimap vision) revealing the **hideout zone** where the thieves took your Raptor.
-     3. Travel to the hideout, outwit or splash the thieves with a handheld water blaster/distraction (or sneak in), and reclaim the Mecha Raptor.
-2. **Branch 2: Cookie Craving (False Alarm!)**
-   - **Trigger:** Occurs occasionally when the Raptor hasn't had treats in a while (no broken lock at the Lab—maybe cookie crumbs instead!).
-   - **Loop:**
-     1. Check Grandma's House; the **Boy & Girl NPCs** drop playful hints (*"Did you check upstairs?"* / *"Grandma's cookie jar is empty again!"*).
-     2. Climb up to **Grandma's Attic** to find the Mecha Raptor happily surrounded by cookie crumbs.
-     3. Mount up and head back out (with a temporary "Sugar Rush" speed/happy buff!).
+1. **LEGO City–Style Main Menu, World Design & Settings:** Bright, colourful LEGO City–inspired world & level design (vibrant modular buildings, clear district landmarks, interactive build pads) paired with stylized non-minifigure characters, a live 3D flyover of the living city + **New Game**, **Continue**, **Options** (**Crowdness / Population Density** — Low / Medium / High / Packed scaling pedestrians, road traffic & sea boats — plus **Shading / Visual Quality** presets: Flat Low-Poly, Toon/Cel, and High with soft shadows, SSAO & glow), and **Extras / Cheats**.
+2. **Multi-Height LEGO City Districts:** Sculpted hills, stepped city districts (*Downtown*, *Suburbs & Lab*, *Uptown / Observatory Hill*, *Harbour & Beach*, *Park*, and *Palm Isle*), coastal cliffs, sunken park basin, and a raised lighthouse hill—connected by sloped 2-lane/4-lane roads, bridges, tunnels, and viaducts.
+3. **Every Building Is Enterable (Separate Scene/Map Loads):**
+   - Walk up to any door (suburban houses, downtown towers, cafés, shops, banks, Police Station Holding Jail, Lab, train stations, lighthouse, pirate shack) and press `E` to iris-wipe load into an isolated Godot interior scene, then return to your exact exterior spot (with Raptor waiting outside, or inside huge hangar/hub interiors).
+   - Tall towers feature internal elevators/stairs with **rooftop exits** for skydiving and Gold Bricks.
+   - **Two Tiers:** Handcrafted landmarks (Lab + Teleport Hub, Police Station Jail showing captured thugs, Bank Vault, Lighthouse, Space/Moon Base) + deterministic seeded interior archetypes for every town building.
+4. **LEGO City Train & Stations:** Elevated viaduct loop circling the city (plus optional Palm Isle sea rail bridge Super Build) with 4–5 enterable stations and a live multi-car train you can board, ride on the roof, drive from the cab, or defend from thugs.
+5. **Quick Travel & Teleport Hub:**
+   - Physical **Teleport Hub** wing in the Lab with glowing portals to every district/island (Town, Downtown, Uptown Hill, Palm Isle, Cloud Isle, Space Base) plus a 100% progress & Extras wall.
+   - Discoverable **Teleport Pads** across districts, islands, and orbit for instant map quick-travel.
+6. **Sky & Space Layer (Above the City):** Keep the prototype's signature vertical flight up past Cloud Isle into the 300 m+ Space zone (moon gravity, stars, ringed planet, floating space islands, and an enterable **Moon/Space Base**).
 
 ---
 
-## 5. Technical Architecture (Three.js + TypeScript)
+## 5. Gameplay, Vehicles, Combat & Toys
 
-### 5.1 Recommended Tech Stack
-- **Build & Tooling:** Vite + TypeScript (strict mode)
-- **3D Rendering:** `three` (Three.js) with stylised flat-shaded/low-poly materials, directional sun shadows, and hemisphere lighting
-- **Physics & Collisions:** `rapier3d-compat` (fast WASM 3D physics for character controllers, car/race mode, projectiles, and triggers) or lightweight custom AABB/capsule + raycast controller for simpler arcade tuning
-- **State & UI Overlay:** Lightweight React or vanilla DOM/CSS HUD + `zustand` for reactive game state (current mode, water tank, thruster fuel, minimap markers, mission state, dialogue box)
-- **Audio:** Web Audio API + spatialised procedural/sample SFX (thrusters, water spray, alarms, footsteps, crunching cookies)
+### A. Giant Mode ("Hulkbuster" Drop-Pod Assembly)
+- No sudden scale-up pop: activating **Giant Mode** calls down oversized **armour & mech modules** from the sky/Lab (chest rig, heavy gauntlets, leg boosters, back cannons) that fly in and **lock/combine onto the Mecha Raptor** piece by piece into a **Hulkbuster-style Titan Mecha Raptor**—built for smashing heavy barriers, tossing trucks, and brawling giant monsters.
 
-### 5.2 Proposed Directory Structure
-```text
-raptor/
-├── index.html
-├── package.json
-├── tsconfig.json
-├── public/
-│   └── models/                  # Optional .glb low-poly assets (or procedural geometry first)
-└── src/
-    ├── main.ts                  # Entry point & render loop
-    ├── game/
-    │   ├── GameEngine.ts        # Scene, renderer, camera, fixed-timestep loop
-    │   ├── InputManager.ts      # Keyboard/mouse bindings & mode-aware actions
-    │   ├── WorldMap.ts          # Roads, buildings, Lab, Grandma's House + Attic, hideouts
-    │   └── EventDirector.ts     # Schedules fires, lab break-ins, cookie escapes, races
-    ├── entities/
-    │   ├── Professor.ts         # On-foot controller & interaction sensor
-    │   ├── MechaRaptor.ts       # State machine: Walk / Flight / Race + Water Gun
-    │   ├── NPCManager.ts        # Grandma, Boy & Girl NPCs, Thieves, Traffic/Rival Cars
-    │   └── FireHazard.ts        # Fire particles, smoke beacon, extinguish progress
-    ├── systems/
-    │   ├── PhysicsSystem.ts     # Collision, ground/flight queries, trigger zones
-    │   ├── PremonitionSystem.ts # Vision shader/overlay + thief hideout reveal
-    │   └── AudioSystem.ts       # SFX & ambient audio
-    ├── state/
-    │   └── gameStore.ts         # HUD, mission state, Raptor status (parked/stolen/attic)
-    └── ui/
-        ├── HUD.tsx              # Minimap, water/thruster gauges, mode indicator
-        ├── DialogueBox.tsx      # Grandma & grandchildren conversations
-        └── PremonitionModal.tsx # Visual clue screen when Grandma gives a premonition
-```
+### B. Professor Melee Combo & 5 Eccentric Lab Guns
+- **Punch & Kick Combo:** 3–4 hit ground chain (*Jab → Hook → Spinning Kick → Knockback Finisher*), mid-air **Flying Kick / Ground Slam**, and sprint **Dropkick / Shoulder Bash** to shatter props and stun thugs.
+- **The 5 Lab Guns (On-Foot Gadget Wheel):**
+  1. **Shrink / Normal / Big Gun:** Cycles targets between tiny, normal, and giant (NPCs, vehicles, props, blockers, or giant monsters).
+  2. **Teleport Gun:** Healthy thugs evade it effortlessly; beat a thug to **low health** first, then zap them straight into the **Police Station Holding Jail** (where you can visit them behind bars!).
+  3. **Water Gun:** Puts out small fires, splashes NPCs, cools hazards, waters plants, and shorts out bots.
+  4. **Transform Gun (Animal Costume Ray):** Turns NPCs or thugs into goofy **animal costumes** (chicken, frog, mini-dino, penguin, duck) flapping/hopping around in panic.
+  5. **Megaphone Gun (Sonic Blast):** Launches vehicles, bikes, NPCs, thugs, and loose props flying through the air.
 
-### 5.3 Key Technical Notes
-- **GTA-Style Minimap:** Render either a lightweight second orthographic top-down camera to a corner viewport/canvas or a crisp 2D canvas minimap synced to world `(x, z)` coordinates showing roads, Lab, Grandma's House, active fires, and Grandma's premonition zone.
-- **Grandma's Attic Access:** Keep Grandma's House enterable seamlessly (fade roof/upper wall when inside, or include an exterior attic hatch/ramp so Flight Mode can also peek in) to avoid disruptive loading screens.
-- **Procedural Placeholder Art First:** Build the Professor, Mecha Raptor (with articulated legs, wings, wheels, and water turret), buildings, and cars out of Three.js primitive groups first so gameplay feels great before investing in custom `.glb` models.
+### C. Expanded Vehicles & Roaming Boats
+- **Road Variety & Visible Interiors:** Sedans, **race cars**, **roadsters**, **city buses**, **fire trucks**, police cruisers, vans, motorbikes, and bicycles—all with distinct speed, mass, and handling, plus **transparent glass windows** so you can see the AI driver or the **Professor** seated at the wheel.
+- **Sea Traffic:** Roaming **AI boats** (speedboats, fishing boats, yachts, coastguard) cruising around the town coast and Palm Isle—swim or fly up and board/take them over, while the Raptor flies beside you if Follow is on.
+- **Vehicle Call-In Pads:** Unlockable rides summoned via Vehicle Tokens at roadside/harbour pads.
+
+### D. Smashable World, Collectibles & Cheats
+- **Destructible Props & Bolts/Studs:** Indoors and outdoors shatter into magnetic Bolts with a Hero/Multiplier bar.
+- **Gold Bricks, Red/Pink Bricks & Super Builds:** Unlock **Cheat Mode** toggles (**Unlimited Turbo**, **Unlimited Water**, Bolt Magnet, Big Head, Confetti Water, etc.) plus permanent Super Builds (Palm Isle bridge, mega-ramps, Space launch pad).
+- **Optional Sandbox Scenarios:** Burning buildings, rival races, Raptor abductions anywhere, runaway train events, meteor crashes, and optional **Giant Monster / Rogue Mech** encounters (great excuse to deploy Hulkbuster Giant Mode!).
 
 ---
 
-## 6. Phased Development Roadmap
+## 6. Godot 4 Phased Roadmap
 
-### Phase 1 — Playable Sandbox MVP
-- [x] Initialise Vite + TypeScript + Three.js project and basic HUD shell.
-- [x] Build low-poly starter map (Professor's Lab pad, roads, Grandma's House exterior + attic room, a few blocks).
-- [x] Implement Professor on-foot controller and Mount/Dismount flow.
-- [x] Implement Mecha Raptor **Walk Mode** and **Lab Parking** trigger.
-- [x] Add follow camera + basic GTA-style 2D minimap.
+### Phase 1 — Godot Core, Scale, Terrain & Menu Foundation
+- [x] Set up Godot 4 project structure, input actions (keyboard/mouse/gamepad/touch), and **LEGO City–style 3D Main Menu** + **Options** (including **Shading** presets & graphics settings)
+- [x] Build **multi-height sculpted terrain** (hills, terraces, 2-lane & 4-lane roads, bridges, Palm Isle hill) with **proper character-to-building scale**
+- [x] Implement **Professor** (36 yo model, walk/sprint, parachute + `Space`-to-cut **LEGO 2 skydive pose**) and **Mecha Raptor** (`Walk`, `Flight`, `Race` — no Boat mode, meteor fall **only** on Raptor, real vehicle/NPC collisions) + **Camera Zoom In / Out / Reset**
+- [x] Smooth **Land ↔ Space** sky/fog/LOD transition + Cloud Isle & Space islands
 
-**Phase 1 decisions (as built):**
-- Physics: **Rapier** (`@dimforge/rapier3d-compat`) with its kinematic character controller for both the Professor and the Raptor.
-- HUD: **vanilla DOM + `zustand/vanilla`** and **Lucide** icons (no React yet), so `src/ui/*.ts`, not `.tsx`.
-- Parking: getting off while standing on the Lab pad parks the Raptor (snaps it to the pad, refills water + thruster). Getting off anywhere else leaves it "idle in town".
-- Grandma's house: walk-in door, stairs to the attic, a big east attic window (meant for the Phase 3 flight entry). Walls and roof fade while the Professor is inside.
-- Map: 9×9 road grid, fixed seed so the layout is the same every load, invisible walls at ±282 m.
-- Dev server: `npm run dev` on port 5195 (also the `raptor` entry in `for-fun/.claude/launch.json`).
+### Phase 2 — Living City, Boats, Routines & Enterable Interiors
+- [x] Add **road vehicle variety** (race car, roadster, bus, fire truck, police car, bikes) with **transparent glass & visible drivers** + **roaming sea boats** (with Raptor fly-along follow) + **Crowdness** density setting (pedestrians, traffic & boats)
+- [x] Add **named NPC daily routines** (Prof's wife in her Godzilla costume, two sons ages 9 & 11, Prof's mother "Grandma", citizens) + **2D portrait placeholder dialogue UI**
+- [ ] Build Godot **Interior Scene Switcher** (iris wipe, doorstep & tower rooftop exits) + door triggers on every building
+- [ ] Build **Lab Inside**, **Teleport Hub**, **Police Station Holding Jail**, and initial seeded building archetypes
+- [ ] Implement **District Teleport Pads** + Map Quick-Travel
 
-### Phase 2 — Flight, Race Mode & Water Machine Gun
-- [x] Implement **Flight Mode** (takeoff, 3D air steering, hover, landing).
-- [x] Implement **Race Mode** (chassis transformation, drift/arcade car physics, **Thruster** boost + energy bar).
-- [x] Implement **Water Machine Gun** (aiming reticle, water projectile stream, splash VFX, tank refill at Lab/hydrants).
-- [x] Add rival AI cars on the ring road for spontaneous races.
+### Phase 3 — Combat, 5 Lab Guns, Hulkbuster Giant Mode & Abductions
+- [ ] Implement Professor **punch & kick combo** + **5-Gun Gadget Wheel** (Size, Teleport-to-Jail, Water, Transform Costume, Megaphone)
+- [ ] Implement **Hulkbuster Giant Mode** (flying drop-pod armour parts combining onto the Mecha Raptor)
+- [ ] Rework **Treats** (useful buffs/lures/prevent raids) and **Raptor abduction anywhere** when left behind
+- [ ] Add **Cheat Mode / Extras** menu (**Unlimited Turbo**, **Unlimited Water**, mutators)
 
-### Phase 3 — Open-World Events, Grandma & NPCs
-- [x] Implement **Neighbourhood Fire System** (random fire spawns, smoke beacons, extinguishing progress, rewards).
-- [x] Implement **Grandma, Boy & Girl NPCs** with proximity dialogue prompts and stateful lines.
-- [x] Implement **Lab Break-In & Theft System** (thief spawn, Raptor relocation to a hideout, Lab clues).
-- [x] Implement **Grandma's Premonition** visual clue & minimap ping + Thief hideout recovery sequence.
-- [x] Implement **Cookie Craving Mystery** (Raptor sneaks to **Grandma's Attic**, kids drop hints, attic discovery).
-
-### Phase 4 — Polish, Juice & Replayability
-- [x] Distinct animations/transformations for Walk ↔ Flight ↔ Race modes.
-- [x] Sound effects & upbeat synth/adventure music.
-- [x] Lab upgrade bench (faster thrusters, larger water tank, Lab security alarm, cookie dispenser).
-- [x] Performance pass (instanced trees/buildings, particle pooling) and mobile/gamepad support if desired.
-
----
-
-### Phases 2–4 decisions (as built)
-- **Steering (LEGO-style only):** move with the screen; the water gun auto-locks onto the nearest fire or thief in front of you (never passers-by); hold right-click to aim freely. Race mode and vehicles steer like cars (A/D). A tank-style option was tried and removed at the user's request.
-- **Running:** tap Shift once to run (Borderlands-style); it lasts until you stop moving, free-aim, or tap again.
-- **Vehicles (GTA-style):** walk up to a traffic car and press E to take it (the driver jumps out and runs off); bicycles and motorbikes are parked around town (one of each by the Lab, a bicycle at Grandma's). E gets out and leaves the vehicle where it is; at most 5 taken cars stay around, and traffic is topped back up out of sight. You can challenge rivals to races in a car.
-- **Double jump:** press Space again in mid-air in Walk mode to take off into Flight.
-- **Jumps:** Professor 2 m, Raptor 6 m, Raptor running jump 12 m.
-- **Water and Palm Isle:** the sea is real now (shallow shelf, 2.8 m deep): the Professor swims, the Raptor and vehicles wade slowly. Palm Isle sits east of the main island (palms, huts, lighthouse, piers, a pirate-shack thief hideout). The Raptor gained a 4th mode, **Boat** (key 4), a jet-boat for crossing the sea.
-- **Thruster:** auto-refills after a short pause; emptying it overheats it until 30 %. Race mode uses it 3× more efficiently (≈ 12 s per meter).
-- **Race mode:** 42 m/s (3.2× Walk), boost 66 m/s; `V` enters it, Space returns to Walk, Ctrl/C drifts; the water gun works while driving.
-- **Sky and space:** a sky that fades to space with stars and a ringed planet above ~300 m, moon gravity up there, a 900 m flight ceiling with fast climbing (Shift + Space), and four floating islands (Cloud Isle, two Star Isles, Moon Rock) with a discovery bonus. Inspired by flying into space in LEGO-style hero games.
-- **Mode keys:** `V` Race, `B` Boat; double-tap Space returns to Walk from Race or Boat (in Walk it takes off into Flight).
-- **Calling and following:** `R` calls the Raptor (it flies over and lands beside you, swooping in from out of sight when far away or stranded in space); `F` makes it follow you on foot (F again: stay). It can't be called while stolen or in the attic.
-- **Parachute:** getting off the Raptor high in the air opens a parachute; falling from a space island opens it automatically on re-entry (below ~290 m). Sink rate eases from fast (high up) to 3.5 m/s near the ground.
-- **Turbo ram and landing blasts:** boosting in Race mode throws whatever you hit; heavy landings (≈ 8 m+ falls) make an impact shockwave that throws everything nearby. Thrown things recover by themselves (FlingSystem).
-- **Controls:** `1/2/3` or `Q` switch Walk/Flight/Race; click (or `J`) sprays; Space climbs in flight and drifts in race; `Ctrl`/`C` descends; Shift runs/boosts (boost uses thruster energy). Gamepad and on-screen touch controls are supported.
-- **Water:** the Raptor's tank refills at red hydrants on intersection corners, park fountains and the Lab pad. On foot the Professor has a weak handheld blaster that never runs dry (used on thieves, and for splashing passers-by).
-- **Living town:** ambient cars drive the road grid and brake/honk for obstacles; ~40 pedestrians walk the sidewalks, wave at the Professor, scatter from a charging Raptor and shake off water. (Added on request.)
-- **Races:** three rivals (Blaze, Volt, Nitro Nana) cruise the ring road; challenge one in Race mode for a one-lap, 8-gate race with rubber-banding. Four stunt ramps sit just outside the ring road.
-- **Fires:** one at a time, roughly every 1–2 minutes, on a building 60–260 m away; 150 s to spray out every hotspot.
-- **Mystery:** only when the Raptor is left alone and the Professor is 70 m+ away. Low treats → likely a cookie run (attic); otherwise a chance of theft (Lab alarm upgrade lowers it). Clues differ (footprints + snapped lock vs. crumbs), Grandma's crystal ball confirms which, and her premonition marks a zone (not the exact spot) on the minimap.
-- **Economy:** one currency, Lab Points (fires, races, rescues, cookie runs), spent at the upgrade bench beside the Lab garage: Turbo Thrusters, Bigger Water Tank, Lab Security Alarm, Cookie Dispenser (3 levels each). Points, upgrades and audio settings are saved in the browser.
-- **Audio:** all procedural Web Audio (no files): effects, loops (spray, thrusters, engine, wind, fire crackle) and a looping chiptune; `M` toggles music.
-- **Section 7 answers:** no fallback scooter (sprinting is fast enough); the alarm reduces thefts but never removes them; the Raptor sniffs around a few metres when left idle in town.
-
-## 7. Ideas & Things to Decide Next
-- **Fallback Transport:** When the Raptor is stolen or in Grandma's attic, should the Professor have a small jet-scooter or just sprint/take shortcuts so getting to Grandma's House stays fun?
-- **Theft Prevention vs. Chaos:** Should installing a Lab Alarm later reduce thefts, or keep a manual "bait/guard" toggle so players can still trigger the Premonition quest whenever they want?
-- **Raptor Autonomy:** When you leave the Raptor parked outside the Lab, should it occasionally wander a few metres to sniff flowers or chase birds for extra charm?
+### Phase 4 — LEGO City Train, Smashables & Sandbox Events
+- [ ] Build elevated rail viaduct, **enterable Train Stations**, and live multi-car drivable **City Train**
+- [ ] Add destructible props + magnetic **Bolts/Studs**, **Gold/Red Bricks**, and **Super Build** pads
+- [ ] Port/expand **fires**, **rival races**, **Space Moon Base**, and optional **Giant Monster / Kaiju** encounters
