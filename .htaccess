@@ -1,0 +1,17 @@
+# Local Apache only (not part of the build).
+# Serves the built game from dist/ at http://localhost/for-fun/raptor/ (build it with `npm run build:local`).
+# Needs mod_rewrite and `AllowOverride FileInfo` (or All) for this folder, like ../zodiac/.htaccess.
+# Always check with the server for a fresh copy while developing (a 304 answer is cheap).
+<IfModule mod_headers.c>
+  Header set Cache-Control "no-cache"
+</IfModule>
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /for-fun/raptor/
+  # / -> the built game
+  RewriteRule ^$ dist/index.html [L]
+  # a file of the build: assets/*.js, assets/*.css ...
+  RewriteCond %{DOCUMENT_ROOT}/for-fun/raptor/dist/$1 -f
+  RewriteRule ^(.+)$ dist/$1 [L]
+</IfModule>
