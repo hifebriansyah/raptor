@@ -12,11 +12,13 @@ const SPRINT = 22;
 const RUN_JUMP = 27.1;
 const FLY = 24;
 const FLY_BOOST = 44;
-const RACE_TOP = 34;
-const RACE_BOOST = 54;
+/** Race mode is at least 3× Walk mode: 42 m/s vs 13 walking; boost 66 = 3× the 22 m/s run. */
+const RACE_TOP = 42;
+const RACE_BOOST = 66;
 const BOAT_TOP = 30;
 const BOAT_BOOST = 46;
-const MAX_ALTITUDE = 160;
+/** Flight ceiling: high enough to reach space (it starts at ~300 m) and the floating islands. */
+const MAX_ALTITUDE = 900;
 /** Camera pitch that counts as "level" for flight (the camera's starting pitch). */
 const DEFAULT_CAM_PITCH = 0.32;
 
@@ -24,7 +26,7 @@ export type RaptorMode = 'walk' | 'flight' | 'race' | 'boat';
 export const RAPTOR_MODES: RaptorMode[] = ['walk', 'flight', 'race', 'boat'];
 
 /** Things that happened this step, drained by the engine for sound and effects. */
-export type RaptorEvent = 'transform' | 'takeoff' | 'landed' | 'jump' | 'crash' | 'stomp' | 'wet';
+export type RaptorEvent = 'transform' | 'takeoff' | 'landed' | 'jump' | 'crash' | 'stomp' | 'wet' | 'impact';
 
 export interface RaptorDrive {
   input: InputManager;
@@ -55,6 +57,8 @@ export class MechaRaptor extends CharacterEntity {
   /** Signed forward speed in race mode. */
   raceSpeed = 0;
   readonly events: RaptorEvent[] = [];
+  /** Downward speed (m/s) of the last hard landing, for the 'impact' event's strength. */
+  impactSpeed = 0;
   /** Where the Professor's mesh sits (its origin is the Professor's feet). */
   readonly saddle = new THREE.Object3D();
   /** Tip of the water cannon. */
@@ -137,6 +141,14 @@ export class MechaRaptor extends CharacterEntity {
   update(dt: number, drive: RaptorDrive | null): void {
     this.boosting = false;
     this.drifting = false;
+    if (this.summonTarget && !this.ridden) {
+      this.updateSummon(dt);
+      return;
+    }
+    if (this.followTarget && !this.ridden) {
+      this.updateFollow(dt, this.followTarget);
+      return;
+    }
     if (!this.ridden || !drive) {
       this.updateIdle(dt);
       return;
@@ -150,6 +162,73 @@ export class MechaRaptor extends CharacterEntity {
     const wet = this.depth > 0.8 && (this.mode === 'walk' || this.mode === 'race');
     if (wet && !this.wasWet) this.events.push('wet');
     this.wasWet = wet;
+  }
+
+  /** Feet position of whoever it is following (F), set by the engine each step; null = stay. */
+  followTarget: THREE.Vector3 | null = null;
+
+  /** Companion mode: trot after the Professor, run to catch up, wait a few metres away. */
+  private updateFollow(dt: number, target: THREE.Vector3): void {
+    if (this.mode !== 'walk') this.resetToWalk();
+    const to = new THREE.Vector3(target.x - this.pos.x, 0, target.z - this.pos.z);
+    const dist = to.length();
+    const want = new THREE.Vector3();
+    if (dist > 5) want.copy(to.normalize()).multiplyScalar(Math.min(SPRINT, (dist - 4) * 1.6 + 3));
+    const wasGrounded = this.grounded;
+    // hop over things in the way: if it wants to move but is blocked, jump
+    const blocked = this.grounded && want.lengthSq() > 4 && this.moveRatio < 0.3;
+    this.move(dt, want, blocked);
+    if (dist <= 5 && dist > 0.5) this.heading = dampAngle(this.heading, Math.atan2(to.x, to.z), 3, dt);
+    if (!wasGrounded && this.grounded) this.events.push('stomp');
+  }
+
+  /** Where it is flying to after being called (R), or null. */
+  summonTarget: THREE.Vector3 | null = null;
+  private summonTime = 0;
+  private summonCheck = { t: 0, dist: Infinity };
+
+  /** Called by the Professor: take off and fly to `feet`, then land there. */
+  summon(feet: THREE.Vector3): void {
+    this.summonTarget = feet.clone();
+    this.summonTime = 0;
+    this.summonCheck = { t: 0, dist: Infinity };
+    this.home = null;
+    if (this.mode !== 'flight') this.setMode('flight');
+  }
+
+  /** Autopilot: cruise above the target, then descend and land beside it. */
+  private updateSummon(dt: number): void {
+    const tgt = this.summonTarget!;
+    this.beginStep();
+    this.summonTime += dt;
+    const to = new THREE.Vector3(tgt.x - this.pos.x, 0, tgt.z - this.pos.z);
+    const dist = to.length();
+    const landY = tgt.y + this.footOffset;
+    const cruiseY = landY + (dist > 25 ? 18 : 0);
+    const want = dist > 1.2 ? to.normalize().multiplyScalar(Math.min(40, dist * 1.4 + 3)) : new THREE.Vector3();
+    const wantVy = THREE.MathUtils.clamp((cruiseY - this.pos.y) * 1.6, -28, 28);
+    const k = 1 - Math.exp(-3 * dt);
+    this.velocity.x += (want.x - this.velocity.x) * k;
+    this.velocity.z += (want.z - this.velocity.z) * k;
+    this.vy += (wantVy - this.vy) * k;
+    this.integrate(dt, false);
+    if (want.lengthSq() > 1) this.heading = dampAngle(this.heading, Math.atan2(want.x, want.z), 4, dt);
+
+    const arrived = dist < 2.2 && Math.abs(this.pos.y - landY) < 1.0;
+    // Not getting closer (a building in the way)? Hop the rest of the way.
+    this.summonCheck.t += dt;
+    if (this.summonCheck.t > 2.5) {
+      const stuck = dist > this.summonCheck.dist - 2;
+      this.summonCheck = { t: 0, dist };
+      if (stuck || this.summonTime > 30) this.teleport(new THREE.Vector3(tgt.x, landY, tgt.z), this.heading);
+    }
+    if (arrived || this.pos.distanceTo(new THREE.Vector3(tgt.x, landY, tgt.z)) < 0.5) {
+      this.summonTarget = null;
+      this.velocity.set(0, 0, 0);
+      this.vy = 0;
+      this.setMode('walk');
+      this.events.push('landed');
+    }
   }
 
   private updateIdle(dt: number): void {
@@ -189,7 +268,9 @@ export class MechaRaptor extends CharacterEntity {
     // Running (tap Shift) jumps twice as high: ≈ 12 m instead of ≈ 6 m
     const running = d.input.sprint && this.horizontalSpeed > WALK * 0.8;
     const wade = this.depth > 1.0 ? 0.5 : 1; // slow going through deep water
+    const fall = -this.vy;
     this.move(dt, dir.multiplyScalar((d.input.sprint ? SPRINT : WALK) * d.speedMult * wade), d.input.jump, d.face === null, running ? RUN_JUMP : undefined);
+    this.checkImpact(wasGrounded, fall);
     if (d.face !== null) this.heading = dampAngle(this.heading, d.face, 8, dt);
     if (wasGrounded && !this.grounded && this.vy > 5) this.events.push('jump');
     if (!wasGrounded && this.grounded) this.events.push('stomp');
@@ -217,7 +298,10 @@ export class MechaRaptor extends CharacterEntity {
     if (d.face !== null) this.heading = dampAngle(this.heading, d.face, 6, dt);
     else if (Math.hypot(target.x, target.z) > 1) this.heading = dampAngle(this.heading, Math.atan2(target.x, target.z), 4, dt);
     this.boosting = boost;
-    target.y = -Math.sin(pitch) * a.z * spd + ((d.input.ascend ? 1 : 0) - (d.input.descend ? 1 : 0)) * 12;
+    // Space/Ctrl climb and descend; with Shift held it climbs fast enough to reach space quickly
+    const climb = d.input.sprint && d.canBoost ? 38 : 14;
+    target.y = -Math.sin(pitch) * a.z * spd + ((d.input.ascend ? 1 : 0) - (d.input.descend ? 1 : 0)) * climb;
+    if (d.input.ascend && d.input.sprint && d.canBoost) this.boosting = true;
     if (this.pos.y > MAX_ALTITUDE) target.y = Math.min(target.y, -2);
 
     const k = 1 - Math.exp(-2.5 * dt);
@@ -242,6 +326,18 @@ export class MechaRaptor extends CharacterEntity {
         this.events.push('landed');
       }
     } else this.landTimer = 0;
+  }
+
+  /**
+   * A hard landing (e.g. after a 12 m running jump or a ramp jump) on solid ground fires 'impact'.
+   * `fall` is the downward speed just before touching down: 22 m/s ≈ an 8 m drop, so the normal
+   * 6 m jump lands quietly and the 12 m running jump (≈ 27 m/s) hits hard.
+   */
+  private checkImpact(wasGrounded: boolean, fall: number): void {
+    if (!wasGrounded && this.grounded && fall > 22 && this.depth < 0.3) {
+      this.impactSpeed = fall;
+      this.events.push('impact');
+    }
   }
 
   /** Over the sea in Flight or Boat mode it rides on the water surface instead of sinking. */
@@ -301,7 +397,7 @@ export class MechaRaptor extends CharacterEntity {
 
     if (this.grounded) {
       if (throttle > 0) {
-        if (this.raceSpeed < top) this.raceSpeed += (boost ? 34 : 22) * throttle * dt;
+        if (this.raceSpeed < top) this.raceSpeed += (boost ? 44 : 30) * throttle * dt;
       } else if (throttle < 0) {
         this.raceSpeed -= (this.raceSpeed > 0 ? 40 : 14) * -throttle * dt;
         this.raceSpeed = Math.max(this.raceSpeed, -12);
@@ -323,7 +419,10 @@ export class MechaRaptor extends CharacterEntity {
     const k = 1 - Math.exp(-traction * dt);
     this.velocity.x += (fx * this.raceSpeed - this.velocity.x) * k;
     this.velocity.z += (fz * this.raceSpeed - this.velocity.z) * k;
+    const wasGroundedR = this.grounded;
+    const fallR = -this.vy;
     this.integrate(dt, true);
+    this.checkImpact(wasGroundedR, fallR);
 
     const lateral = Math.abs(-this.velocity.x * fz + this.velocity.z * fx);
     this.drifting = this.grounded && lateral > 5;

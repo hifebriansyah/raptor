@@ -24,7 +24,7 @@ interface Case {
   atticHint: boolean;
 }
 
-type ThiefState = 'guard' | 'chase' | 'flee';
+type ThiefState = 'guard' | 'chase' | 'flee' | 'flung';
 
 interface Thief {
   body: Humanoid;
@@ -191,11 +191,35 @@ export class MysterySystem {
     this.thieves.push(t);
   }
 
+  /** Thieves within `radius` of `pos` (for the turbo ram / landing blast). */
+  thievesNear(pos: THREE.Vector3, radius: number): { pos: THREE.Vector3; body: THREE.Object3D; thief: unknown }[] {
+    return this.thieves
+      .filter((t) => t.state !== 'flung' && Math.hypot(t.pos.x - pos.x, t.pos.z - pos.z) < radius)
+      .map((t) => ({ pos: t.pos, body: t.body.root, thief: t }));
+  }
+
+  /** A thief got launched: out of the fight. Returns a callback for when they land. */
+  flingThief(thief: unknown): (landing: THREE.Vector3) => void {
+    const t = thief as Thief;
+    t.state = 'flung';
+    this.game.water.targets.delete(t.target);
+    const left = this.thieves.filter((x) => x.state !== 'flee' && x.state !== 'flung').length;
+    showToast(left ? 'WHAM! A thief goes flying!' : 'WHAM! The last thief goes flying. Grab your Raptor!');
+    this.onEvent?.('soaked');
+    return (landing) => {
+      // they land, pick themselves up and run off for good
+      t.pos.copy(landing).setY(0);
+      t.state = 'flee';
+      t.fleeTime = 4;
+    };
+  }
+
   private updateThieves(dt: number): void {
     const g = this.game;
     const prof = g.professor.pos;
     const onFoot = g.onFoot;
     for (const t of this.thieves.slice()) {
+      if (t.state === 'flung') continue;
       const toProf = new THREE.Vector3(prof.x - t.pos.x, 0, prof.z - t.pos.z);
       const dProf = toProf.length();
       let move = new THREE.Vector3();
@@ -354,6 +378,7 @@ export class MysterySystem {
     const c = this.case!;
     g.scene.remove(c.clue);
     for (const t of this.thieves) {
+      if (t.state === 'flung') continue;
       t.state = 'flee';
       t.fleeTime = 4;
       g.water.targets.delete(t.target);
@@ -378,6 +403,7 @@ export class MysterySystem {
   /** Per rendered frame: animate thieves. */
   render(dt: number): void {
     for (const t of this.thieves) {
+      if (t.state === 'flung') continue;
       t.body.root.position.copy(t.pos);
       t.body.root.rotation.y = t.heading;
       if (t.state === 'flee') t.body.panic(dt, t.anim);

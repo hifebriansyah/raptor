@@ -26,6 +26,13 @@ export class CameraRig {
   private distance = 6;
   private idle = 0;
   private readonly shoulder = new THREE.Vector2();
+  /** Camera shake strength (m), decays quickly. */
+  private shakeAmt = 0;
+
+  /** Rattle the camera (e.g. a heavy landing). */
+  shake(amount: number): void {
+    this.shakeAmt = Math.max(this.shakeAmt, amount);
+  }
 
   constructor(readonly camera: THREE.PerspectiveCamera) {}
 
@@ -77,5 +84,11 @@ export class CameraRig {
     const minY = surfaceAt(this.camera.position.x, this.camera.position.z) + 0.4;
     if (this.camera.position.y < minY) this.camera.position.y = minY;
     this.camera.lookAt(focus.clone().add(shift));
+    if (this.shakeAmt > 0.005) {
+      const s = this.shakeAmt;
+      this.camera.position.add(new THREE.Vector3((Math.random() - 0.5) * s, (Math.random() - 0.5) * s, (Math.random() - 0.5) * s));
+      this.camera.rotation.z += (Math.random() - 0.5) * s * 0.05;
+      this.shakeAmt *= Math.exp(-7 * dt);
+    } else this.shakeAmt = 0;
   }
 }

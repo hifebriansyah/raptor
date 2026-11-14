@@ -22,6 +22,8 @@ interface Walker {
   pause: number;
   /** Actual speed last step, drives the walk animation. */
   anim: number;
+  /** Thrown through the air (the FlingSystem moves the body meanwhile). */
+  flung: boolean;
 }
 
 /** Something people get out of the way of: the Raptor, or a vehicle the Professor drives. */
@@ -80,6 +82,7 @@ export class PedestrianSystem {
         pos: at.clone(),
         pause: 0,
         anim: 0,
+        flung: false,
         target: {
           position: new THREE.Vector3(),
           radius: 0.8,
@@ -128,6 +131,42 @@ export class PedestrianSystem {
   }
 
   /** Make everyone near `pos` cheer (after a fire is put out, a race is won…). */
+  /** People within `radius` of `pos`, not already flying. */
+  near(pos: THREE.Vector3, radius: number): Walker[] {
+    return this.walkers.filter((w) => !w.flung && Math.hypot(w.pos.x - pos.x, w.pos.z - pos.z) < radius);
+  }
+
+  /** Hand someone to the FlingSystem; returns their body to throw. */
+  beginFling(w: Walker): THREE.Object3D {
+    w.flung = true;
+    w.body.panic(0, 0);
+    return w.body.root;
+  }
+
+  /** Landed: dizzy for a moment, then wander back to the nearest sidewalk. */
+  endFling(w: Walker, landing: THREE.Vector3): void {
+    w.agent.placeNear(landing);
+    w.pos.set(landing.x, 0, landing.z);
+    w.push.subVectors(w.pos, w.agent.world).setY(0);
+    w.mood = 'soaked';
+    w.moodTime = 2.5;
+    w.flung = false;
+    w.body.root.rotation.set(0, w.heading, 0);
+  }
+
+  /** Everyone near `pos` runs away screaming (big Raptor landings, explosions…). */
+  scare(pos: THREE.Vector3, radius: number): void {
+    for (const w of this.walkers) {
+      const away = new THREE.Vector3(w.pos.x - pos.x, 0, w.pos.z - pos.z);
+      const d = away.length();
+      if (d > radius) continue;
+      w.mood = 'panic';
+      w.moodTime = 3;
+      w.push.addScaledVector(d > 0.01 ? away.divideScalar(d) : new THREE.Vector3(1, 0, 0), 3 * (1 - d / radius));
+      if (w.push.length() > 7) w.push.setLength(7);
+    }
+  }
+
   cheer(pos: THREE.Vector3, radius: number): void {
     for (const w of this.walkers) {
       if (w.pos.distanceTo(pos) < radius && w.mood === 'stroll') {
@@ -139,6 +178,7 @@ export class PedestrianSystem {
 
   update(dt: number, ctx: PedestrianContext): void {
     for (const w of this.walkers) {
+      if (w.flung) continue;
       for (const t of ctx.threats) {
         if (t.speed < 6 || w.mood === 'soaked') continue;
         const away = new THREE.Vector3(w.pos.x - t.pos.x, 0, w.pos.z - t.pos.z);
@@ -199,6 +239,7 @@ export class PedestrianSystem {
   render(dt: number, camera: THREE.Camera): void {
     const cam = camera.position;
     for (const w of this.walkers) {
+      if (w.flung) continue;
       // skip animating far-away people (they are tiny anyway)
       const far = w.pos.distanceToSquared(cam) > 160 * 160;
       w.body.root.visible = w.pos.distanceToSquared(cam) < 260 * 260;

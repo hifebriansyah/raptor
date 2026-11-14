@@ -111,7 +111,7 @@ export class RaceSystem {
     r.playerTravel += delta;
     r.lastProj = proj.d;
     const lead = r.rivalTravel - r.playerTravel;
-    const base = 37;
+    const base = 46; // keeps up with the Raptor's 42 m/s race mode (boost 66)
     r.rival.targetSpeed = lead > 90 ? base - 6 : lead < -90 ? base + 10 : base + THREE.MathUtils.clamp(-lead * 0.05, -4, 6);
     r.rivalTravel += r.rival.speed * dt;
 

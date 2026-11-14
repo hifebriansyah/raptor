@@ -1,5 +1,8 @@
 import * as THREE from 'three';
-import { floorAt, waterDepth } from '../game/Terrain';
+import { floorAt, gravityAt, waterDepth } from '../game/Terrain';
+
+/** Terminal fall speed (m/s). Above ~60 m/s a fall counts as a meteor drop (see GameEngine.impact). */
+export const MAX_FALL = 110;
 import type { CharacterBody, PhysicsSystem } from '../systems/PhysicsSystem';
 
 export const GRAVITY = -30;
@@ -34,8 +37,12 @@ export abstract class CharacterEntity {
   readonly prev = new THREE.Vector3();
   readonly velocity = new THREE.Vector3();
   heading = 0;
+  /** Fastest this character falls (m/s); a parachute lowers it. */
+  protected fallLimit = MAX_FALL;
   protected prevHeading = 0;
   vy = 0;
+  /** Downward speed (m/s) of the last hard landing on land, set here and cleared by whoever shows the impact. */
+  lastImpact = 0;
   grounded = false;
 
   protected constructor(
@@ -102,7 +109,7 @@ export abstract class CharacterEntity {
    * With `gravity` false, `vy` is used as is (flight).
    */
   protected integrate(dt: number, gravity: boolean): void {
-    if (gravity) this.vy += GRAVITY * dt;
+    if (gravity) this.vy = Math.max(this.vy + gravityAt(this.pos.y) * dt, -this.fallLimit); // low gravity in space; a long drop from space or the clouds builds up to meteor speed
     const desired = { x: this.velocity.x * dt, y: this.vy * dt, z: this.velocity.z * dt };
     const { controller, collider, body } = this.char;
     // Walls, ramps, buildings and cars go through the character controller; the ground and sea
@@ -129,7 +136,10 @@ export abstract class CharacterEntity {
         this.groundVy = onFloor ? 0 : m.y / dt; // only ramps/slopes launch you
         // Standing: no downward push (snap-to-ground keeps us on slopes/steps). A constant push here
         // made the capsule creep into the ground and get stuck.
-        if (this.vy < 0) this.vy = 0;
+        if (this.vy < 0) {
+          if (!wasGrounded && -this.vy > 22 && this.depth < 0.3) this.lastImpact = -this.vy;
+          this.vy = 0;
+        }
       } else if (wasGrounded && this.groundVy > 2) {
         this.vy = Math.max(this.vy, this.groundVy); // launched off a ramp
         this.groundVy = 0;
@@ -168,6 +178,7 @@ export abstract class CharacterEntity {
     this.prev.copy(center);
     this.velocity.set(0, 0, 0);
     this.vy = 0;
+    this.grounded = false; // re-checked on the next physics step
     this.heading = this.prevHeading = heading;
   }
 

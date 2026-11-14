@@ -19,6 +19,8 @@ export interface Car {
   /** Set by the race system to override cruise speed. */
   targetSpeed: number | null;
   honk: number;
+  /** Thrown through the air (the FlingSystem moves the mesh meanwhile). */
+  flung: boolean;
 }
 
 const CAR_COLORS = ['#e76f51', '#f4a261', '#e9c46a', '#2a9d8f', '#457b9d', '#a8dadc', '#ffffff', '#6d6875', '#b5838d', '#90be6d'];
@@ -60,12 +62,37 @@ export class TrafficSystem {
   private readonly ambientTarget = 18;
   private refillTimer = 0;
 
+  /** Cars (rivals too) within `radius` of `pos`, not already flying. */
+  near(pos: THREE.Vector3, radius: number): Car[] {
+    return this.cars.filter((c) => !c.flung && Math.hypot(c.agent.world.x - pos.x, c.agent.world.z - pos.z) < radius);
+  }
+
+  /** Hand a car to the FlingSystem: it stops driving and loses its collider until it lands. */
+  beginFling(car: Car): void {
+    car.flung = true;
+    car.speed = 0;
+    car.body.setEnabled(false);
+  }
+
+  /** Landed: shake it off and rejoin the nearest road (rivals go back to the ring road). */
+  endFling(car: Car, landing: THREE.Vector3): void {
+    car.agent.placeNear(landing);
+    car.vis.copy(car.agent.world);
+    car.heading = car.agent.heading;
+    car.mesh.position.copy(car.vis);
+    car.mesh.rotation.set(0, car.heading, 0);
+    car.body.setTranslation({ x: car.vis.x, y: 0.75, z: car.vis.z }, true);
+    car.body.setEnabled(true);
+    car.flung = false;
+    car.honk = -3;
+  }
+
   /** An ambient car close enough for the Professor to take over (never the rival racers). */
   takeable(feet: THREE.Vector3): Car | null {
     let best: Car | null = null;
     let bestD = 3.6;
     for (const c of this.cars) {
-      if (c.rival) continue;
+      if (c.rival || c.flung) continue;
       const d = Math.hypot(c.agent.world.x - feet.x, c.agent.world.z - feet.z);
       if (d < bestD) {
         best = c;
@@ -120,6 +147,7 @@ export class TrafficSystem {
       vis: agent.world.clone(),
       targetSpeed: null,
       honk: 0,
+      flung: false,
     });
   }
 
@@ -129,6 +157,7 @@ export class TrafficSystem {
    */
   update(dt: number, obstacles: readonly Obstacle[], walker: THREE.Vector3 | null = null): void {
     for (const car of this.cars) {
+      if (car.flung) continue;
       let want = car.targetSpeed ?? car.cruise;
       if (walker && !car.rival && Math.hypot(walker.x - car.agent.world.x, walker.z - car.agent.world.z) < 7) want = 0;
       // Look ahead in our lane for obstacles and other cars
@@ -143,7 +172,7 @@ export class TrafficSystem {
         if (ahead > 0 && ahead < 16 && side < 1.6 + r) blocked = Math.min(blocked, ahead - r);
       };
       for (const o of obstacles) check(o.pos, o.radius);
-      for (const other of this.cars) if (other !== car) check(other.agent.world, 2.2);
+      for (const other of this.cars) if (other !== car && !other.flung) check(other.agent.world, 2.2);
 
       let target = want;
       if (blocked < 14) target = Math.min(target, Math.max(0, (blocked - 4) * 1.2));
@@ -170,6 +199,7 @@ export class TrafficSystem {
   /** Smooth visuals; call once per rendered frame. */
   render(dt: number): void {
     for (const car of this.cars) {
+      if (car.flung) continue;
       car.vis.lerp(car.agent.world, 1 - Math.exp(-10 * dt));
       car.heading = dampAngle(car.heading, car.agent.heading, 7, dt);
       car.mesh.position.copy(car.vis);

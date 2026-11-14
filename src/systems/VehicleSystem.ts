@@ -36,6 +36,8 @@ export const VEHICLE_LABEL: Record<VehicleKind, string> = { car: 'car', bike: 'b
  */
 export class Vehicle extends CharacterEntity {
   driven = false;
+  /** Thrown through the air (the FlingSystem moves the mesh meanwhile). */
+  flung = false;
   speed = 0;
   readonly events: ('crash' | 'hop')[] = [];
   /** Where the Professor sits (bikes); cars hide him. */
@@ -320,11 +322,30 @@ export class VehicleSystem {
   }
 
   update(dt: number): void {
-    for (const v of this.vehicles) if (!v.driven) v.idle(dt);
+    for (const v of this.vehicles) if (!v.driven && !v.flung) v.idle(dt);
+  }
+
+  /** Parked/abandoned vehicles within `radius` of `pos`. */
+  near(pos: THREE.Vector3, radius: number): Vehicle[] {
+    return this.vehicles.filter((v) => !v.driven && !v.flung && Math.hypot(v.pos.x - pos.x, v.pos.z - pos.z) < radius);
+  }
+
+  beginFling(v: Vehicle): void {
+    v.flung = true;
+    v.char.collider.setEnabled(false);
+  }
+
+  /** Landed: put its physics body where the mesh came down. */
+  endFling(v: Vehicle, landing: THREE.Vector3, heading: number): void {
+    v.char.collider.setEnabled(true);
+    v.teleport(new THREE.Vector3(landing.x, landing.y + v.footOffset, landing.z), heading);
+    v.speed = 0;
+    v.flung = false;
   }
 
   render(dt: number, alpha: number, camera: THREE.Camera): void {
     for (const v of this.vehicles) {
+      if (v.flung) continue;
       v.sync(alpha);
       if (v.driven || v.group.position.distanceToSquared(camera.position) < 120 * 120) v.animate(dt);
     }

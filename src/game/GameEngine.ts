@@ -1,9 +1,11 @@
 import * as THREE from 'three';
+import { MAX_FALL } from '../entities/CharacterEntity';
 import { MechaRaptor, RAPTOR_MODES, type RaptorMode } from '../entities/MechaRaptor';
 import { NPCManager, type NpcId } from '../entities/NPCManager';
 import { Professor } from '../entities/Professor';
-import { gameStore, showToast, type ControlMode } from '../state/gameStore';
+import { addPoints, gameStore, showToast, type ControlMode } from '../state/gameStore';
 import { AudioSystem } from '../systems/AudioSystem';
+import { FlingSystem } from '../systems/FlingSystem';
 import { MysterySystem } from '../systems/MysterySystem';
 import { Particles } from '../systems/ParticleSystem';
 import { PedestrianSystem } from '../systems/PedestrianSystem';
@@ -20,8 +22,9 @@ import { UPGRADES, UpgradeBench, buyUpgrade } from '../ui/UpgradeBench';
 import { Minimap, type MinimapMarker } from '../ui/Minimap';
 import { CameraRig } from './CameraRig';
 import { EventDirector } from './EventDirector';
+import { SkyIslands } from './SkyIslands';
 import { InputManager } from './InputManager';
-import { WATER_Y, isLand } from './Terrain';
+import { SPACE_Y, WATER_Y, isLand, surfaceAt } from './Terrain';
 import { WorldMap } from './WorldMap';
 
 const STEP = 1 / 60;
@@ -39,6 +42,9 @@ export interface Interaction {
 
 const MODE_CONTROL: Record<RaptorMode, ControlMode> = { walk: 'raptorWalk', flight: 'raptorFlight', race: 'raptorRace', boat: 'raptorBoat' };
 
+/** Falling faster than this (m/s) starts to burn. */
+const METEOR_FROM = 55;
+
 /**
  * Owns the scene, the fixed-timestep simulation loop and the gameplay rules that tie the systems
  * together: mounting/parking, mode switching, the water gun, refilling and interactions.
@@ -46,7 +52,7 @@ const MODE_CONTROL: Record<RaptorMode, ControlMode> = { walk: 'raptorWalk', flig
 export class GameEngine {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
-  readonly camera = new THREE.PerspectiveCamera(60, 1, 0.1, 900);
+  readonly camera = new THREE.PerspectiveCamera(60, 1, 0.1, 5000);
   private readonly sun = new THREE.DirectionalLight('#fff4e0', 2.2);
   readonly rig = new CameraRig(this.camera);
   readonly input: InputManager;
@@ -59,9 +65,15 @@ export class GameEngine {
   readonly pedestrians: PedestrianSystem;
   readonly race: RaceSystem;
   readonly vehicles: VehicleSystem;
+  /** Throws cars, bikes and people around (turbo ram, landing blasts). */
+  readonly fling: FlingSystem;
   /** The car/bike/motorbike the Professor is driving, if any. */
   vehicle: Vehicle | null = null;
   readonly director: EventDirector;
+  readonly sky: SkyIslands;
+  private inSpace = false;
+  private landShown = true;
+  private sceneCount = 0;
   readonly npcs: NPCManager;
   readonly dialogue = new DialogueController();
   readonly mystery: MysterySystem;
@@ -76,6 +88,8 @@ export class GameEngine {
   private readonly aimPoint = new THREE.Vector3();
   private emptyWarned = false;
   private lastWetHint = -999;
+  /** When Space was last pressed while riding (for double-taps). */
+  private lastJumpPress = -1;
   /** Seconds since the thruster last boosted (auto-refill starts after a short pause). */
   private boostPause = 0;
   /** LEGO scheme: what the water gun is locked onto. */
@@ -96,6 +110,7 @@ export class GameEngine {
     this.setupLighting();
     this.world = new WorldMap(this.scene, physics);
     this.particles = new Particles(this.scene);
+    this.sky = new SkyIslands(this.scene, physics);
     this.water = new WaterSystem(this.scene, physics, this.particles);
 
     const { labPad, professorSpawn } = this.world.landmarks;
@@ -110,6 +125,11 @@ export class GameEngine {
     this.pedestrians = new PedestrianSystem(this.scene, this.water);
     this.race = new RaceSystem(this.scene, this.traffic, (p) => this.pedestrians.cheer(p, 60));
     this.vehicles = new VehicleSystem(this.scene, physics, this.world.landmarks);
+    this.fling = new FlingSystem(this.particles);
+    this.fling.onBounce = (p, hard) => {
+      const v = Math.max(0, 1 - p.distanceTo(this.camera.position) / 80);
+      if (v > 0 && hard) this.audio.play('stomp', v);
+    };
 
     this.director = new EventDirector(this.scene, this.world, this.water, this.particles);
     this.npcs = new NPCManager(this.scene, this.world.landmarks);
@@ -122,6 +142,7 @@ export class GameEngine {
     this.markerSources.push(
       () => this.director.markers(),
       () => this.mystery.markers(),
+      () => this.sky.markers(this.playerPos.y),
     );
 
     this.hud = new HUD(container);
@@ -186,6 +207,9 @@ export class GameEngine {
     this.raptor.animate(dt, this.elapsed, parked);
     this.professor.animate(dt, this.elapsed);
     this.handleRaptorEvents();
+    this.meteorFall(dt);
+    this.updateImpacts(dt);
+    this.fling.update(dt);
     for (const veh of this.vehicles.vehicles) {
       for (const e of veh.events.splice(0)) {
         const p = veh.group.position.clone().setY(veh.group.position.y + 0.8);
@@ -246,6 +270,8 @@ export class GameEngine {
     this.pedestrians.render(dt, this.camera);
     this.race.render(this.elapsed);
     this.world.animate(this.elapsed);
+    this.sky.update(this.elapsed, this.camera, this.scene);
+    this.cullLand();
     this.director.render(dt, this.elapsed);
     this.npcs.update(dt, this.elapsed, this.professor.pos, this.dialogue.open ? this.talkingTo : null);
     this.mystery.render(dt);
@@ -287,10 +313,15 @@ export class GameEngine {
 
     // Mode switching while riding the Raptor
     if (this.riding) {
-      // Race mode: Space hops straight back to Walk mode (drift is on Ctrl/C there)
-      if (this.raptor.mode === 'race' && this.input.jump) {
-        this.raptor.setMode('walk');
-        this.input.consumeJump();
+      // Double-tap Space in Race or Boat mode: back to Walk mode (drift is on Ctrl/C in Race)
+      if (this.input.jump) {
+        const double = this.elapsed - this.lastJumpPress < 0.35;
+        this.lastJumpPress = this.elapsed;
+        if (double && (this.raptor.mode === 'race' || this.raptor.mode === 'boat')) {
+          this.raptor.setMode('walk');
+          this.input.consumeJump();
+          this.lastJumpPress = -1;
+        }
       }
       // Double jump: press jump again in mid-air in Walk mode to spread the wings and take off
       if (this.raptor.mode === 'walk' && !this.raptor.grounded && this.input.jump) this.raptor.setMode('flight');
@@ -303,6 +334,10 @@ export class GameEngine {
 
     const face = this.faceHeading();
 
+    if (this.ramming) this.ram(dt);
+    if (this.input.callRaptor && !this.riding) this.callRaptor();
+    if (this.input.toggleFollow && !this.riding) this.toggleFollow();
+    this.updateFollowTarget();
     this.professor.aiming = this.onFoot && this.input.fire;
     this.professor.update(dt, this.input, { camYaw: this.rig.yaw, face: this.onFoot ? face : null });
     if (this.vehicle) {
@@ -327,7 +362,7 @@ export class GameEngine {
           }
         : null,
     );
-    if (!this.riding && s.raptorStatus === 'idle' && this.raptor.depth < 0.3 && this.raptor.mode === 'walk') this.raptor.wander(dt);
+    if (!this.riding && !this.following && s.raptorStatus === 'idle' && this.raptor.depth < 0.3 && this.raptor.mode === 'walk' && !this.raptor.summonTarget) this.raptor.wander(dt);
 
     this.updateResources(dt);
     this.updateWaterGun(dt);
@@ -345,6 +380,7 @@ export class GameEngine {
     const racer = this.vehicle?.kind === 'car' ? this.vehicle.feet : this.raptor.feet;
     this.race.update(dt, racer, (this.riding && this.raptor.mode === 'race') || this.vehicle?.kind === 'car');
     this.director.update(dt, this.playerPos);
+    this.updateSkyProgress();
     this.mystery.update(dt);
 
     this.handleInteraction();
@@ -374,7 +410,9 @@ export class GameEngine {
     // Thruster: drains while boosting; auto-refills quickly after a short pause. Running it dry
     // overheats it: no boost until it is back to 30 % (so it can't flicker at empty).
     if (this.raptor.boosting) {
-      thruster -= 24 * (1 - 0.15 * up.thruster) * dt;
+      // Race mode uses the thruster 3× more efficiently (a full meter lasts ≈ 12 s instead of ≈ 4 s)
+      const efficiency = this.raptor.mode === 'race' ? 3 : 1;
+      thruster -= (24 * (1 - 0.15 * up.thruster) * dt) / efficiency;
       this.boostPause = 0;
       // boost needs > 1 %, so "empty" is ≤ 1 %
       if (thruster <= 1) {
@@ -768,6 +806,9 @@ export class GameEngine {
     this.raptor.ridden = false;
     if (!(this.raptor.mode === 'boat' && this.raptor.depth > 0.5)) this.raptor.resetToWalk();
     this.professor.dismount(this.scene, spot, this.raptor.heading);
+    // Getting off high in the air: pop the parachute (in space it opens by itself on re-entry)
+    const height = spot.y - surfaceAt(spot.x, spot.z);
+    if (height > 8 && spot.y < 290) this.professor.deployParachute();
 
     if (park) {
       gameStore.setState({ control: 'onFoot', raptorStatus: 'parked', water: 100, thruster: 100 });
@@ -789,12 +830,9 @@ export class GameEngine {
       new THREE.Vector3(0, 3.6, 0),
     ];
     for (const o of offsets) {
+      // Mid-air (flight) the Professor steps off right beside the Raptor and falls from there
+      // (high up his parachute opens, see dismount()).
       const feet = this.raptor.localToWorld(o);
-      // mid-air (flight): drop to the ground below
-      if (o.y === 0 && !this.raptor.grounded) {
-        const down = this.physics.rayDistance(feet.clone().setY(feet.y + 0.5), feet.clone().setY(-1));
-        feet.y = feet.y + 0.5 - down;
-      }
       const centre = feet.clone().setY(feet.y + lift);
       if (this.physics.isFree(centre, radius, halfHeight)) return feet;
     }
@@ -811,10 +849,292 @@ export class GameEngine {
   /** Listeners for Raptor events (audio in Phase 4). */
   readonly raptorEventListeners: ((e: string) => void)[] = [];
 
+  /** Expanding shockwave rings and fading crater marks from hard landings. */
+  private readonly impacts: { ring: THREE.Mesh; crater: THREE.Mesh; t: number; strength: number }[] = [];
+
+  /**
+   * Falling from space (or far up in the clouds) builds up to meteor speed: a fiery trail and a shaking camera while
+   * plunging, and a huge crater impact at the bottom. Works for the Raptor (when ridden or alone) and the Professor on foot.
+   */
+  private meteorFall(dt: number): void {
+    const body = this.vehicle ? null : this.riding ? this.raptor : this.professor;
+    if (this.professor.riding) this.professor.lastImpact = 0; // the Raptor reports its own landing
+    else if (this.professor.lastImpact) {
+      if (!this.vehicle) this.impact(this.professor.group.position, this.professor.lastImpact);
+      this.professor.lastImpact = 0;
+    }
+    if (!body) return;
+    const speed = -body.vy;
+    const feet = body.group.position;
+    if (speed < METEOR_FROM || feet.y < 12) return;
+    const heat = Math.min(1, (speed - METEOR_FROM) / (MAX_FALL - METEOR_FROM));
+    const tail = feet.clone().setY(feet.y + 1.2);
+    this.particles.glow.emit({ pos: tail, vel: new THREE.Vector3(0, 6 + 8 * heat, 0), spread: 1.2 + 1.8 * heat, color: heat > 0.6 ? '#ffd166' : '#ff7b00', size: 0.9 + 1.4 * heat, grow: 1.5, life: 0.5, drag: 1, count: 2 + Math.round(5 * heat), alpha: 0.9 });
+    this.particles.soft.emit({ pos: tail.clone().setY(tail.y + 1.5), vel: new THREE.Vector3(0, 4, 0), spread: 1.5, color: '#3a2f2a', size: 1.2, grow: 3, life: 1.1, drag: 1.5, count: 1 + Math.round(2 * heat), alpha: 0.5 });
+    this.rig.shake(0.08 + 0.3 * heat * Math.min(1, dt * 60));
+  }
+
+  /** A heavy landing: shockwave, dust, debris, a crater mark, camera shake, a thump, and panic. */
+  private impact(pos: THREE.Vector3, fallSpeed: number): void {
+    const meteor = Math.max(0, fallSpeed - 60) / 50; // 0 for ordinary hard landings, 1 at terminal speed
+    const strength = THREE.MathUtils.clamp((fallSpeed - 18) / 10, 0.35, 1.2) + 2 * meteor;
+    const ground = pos.clone().setY(surfaceAt(pos.x, pos.z) + 0.06);
+    // dust ring blasting outwards
+    for (let i = 0; i < 36; i++) {
+      const a = (i / 36) * Math.PI * 2;
+      const v = new THREE.Vector3(Math.cos(a), 0.25, Math.sin(a)).multiplyScalar(10 + 8 * strength);
+      this.particles.soft.emit({ pos: ground.clone().add(new THREE.Vector3(Math.cos(a), 0.2, Math.sin(a))), vel: v, spread: 1.5, color: '#d9c7a3', size: 1.6, grow: 4 * strength, life: 1.1, drag: 3, alpha: 0.7 });
+    }
+    // debris chunks flying up
+    this.particles.soft.emit({ pos: ground.clone().setY(ground.y + 0.3), vel: new THREE.Vector3(0, 9 * strength, 0), spread: 6, color: '#8d7b68', size: 0.35, life: 1.2, gravity: -22, count: 24 });
+    this.particles.sparks(ground.clone().setY(ground.y + 0.5), 30, '#ffd166');
+    if (meteor > 0) {
+      // fireball and a rain of burning rubble
+      this.particles.glow.emit({ pos: ground.clone().setY(ground.y + 1), vel: new THREE.Vector3(0, 14, 0), spread: 5, color: '#ff7b00', size: 3.5, grow: 5, life: 0.9, drag: 1.5, count: 30, alpha: 0.9 });
+      this.particles.sparks(ground.clone().setY(ground.y + 0.8), Math.round(80 * meteor), '#ff9f1c');
+    }
+    // shockwave ring + crater mark (removed again after 5 s)
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.85, 1, 48).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: '#fff4d6', transparent: true, opacity: 0.8, depthWrite: false }),
+    );
+    ring.position.copy(ground);
+    const crater = new THREE.Mesh(
+      new THREE.CircleGeometry(2.6 + 1.6 * strength, 20).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: '#4a3b2c', transparent: true, opacity: 0.55, depthWrite: false }),
+    );
+    crater.position.copy(ground).setY(ground.y - 0.02);
+    this.scene.add(ring, crater);
+    this.impacts.push({ ring, crater, t: 0, strength });
+    // feel it
+    this.rig.shake(0.5 + 0.9 * strength);
+    this.audio.play('land', 1);
+    this.audio.play('crash', 0.6 + 0.4 * strength);
+    this.pedestrians.scare(ground, 18 + 12 * strength);
+    // the blast throws everything close by into the air
+    this.blast(ground, 9 + 7 * strength, strength);
+  }
+
+  // ───────────────────────────────────────────── the Raptor follows you (F)
+
+  /** The Raptor trots after the Professor while he is on foot. */
+  private following = false;
+
+  private toggleFollow(): void {
+    const st = gameStore.getState().raptorStatus;
+    if (st === 'stolen' || st === 'attic') {
+      showToast("The Raptor can't follow you. It's missing!");
+      return;
+    }
+    this.following = !this.following;
+    if (this.following && st === 'parked') gameStore.setState({ raptorStatus: 'idle' });
+    showToast(this.following ? 'Raptor: following you! (F to make it stay)' : 'Raptor: staying here.');
+    this.audio.play('blip');
+  }
+
+  /** Each step: point the Raptor at the Professor (or fly it over if he got far away / up high). */
+  private updateFollowTarget(): void {
+    const st = gameStore.getState().raptorStatus;
+    if (this.riding || st === 'stolen' || st === 'attic') {
+      if (st === 'stolen' || st === 'attic') this.following = false;
+      this.raptor.followTarget = null;
+      return;
+    }
+    if (!this.following || this.raptor.summonTarget) {
+      this.raptor.followTarget = null;
+      return;
+    }
+    const me = this.professor.feet;
+    const r = this.raptor.feet;
+    const far = Math.hypot(me.x - r.x, me.z - r.z) > 70 || Math.abs(me.y - r.y) > 8;
+    const settled = this.professor.grounded || this.professor.swimming;
+    if (far && settled) {
+      this.raptor.followTarget = null;
+      this.callRaptor(true);
+      return;
+    }
+    this.raptor.followTarget = settled ? me : null;
+  }
+
+  // ───────────────────────────────────────────── calling the Raptor (R)
+
+  /**
+   * Whistle for the Raptor: it flies over and lands beside the Professor. From far away (another
+   * island, deep space, the other side of town) it swoops in from just out of sight instead.
+   */
+  private callRaptor(quiet = false): void {
+    const s = gameStore.getState();
+    if (s.raptorStatus === 'stolen' || s.raptorStatus === 'attic') {
+      showToast("The Raptor can't hear you. It's missing! Find out where it went.");
+      return;
+    }
+    const me = this.professor.feet;
+    // land a few metres to the Professor's right
+    const right = new THREE.Vector3(Math.cos(this.professor.heading), 0, -Math.sin(this.professor.heading));
+    const target = me.clone().addScaledVector(right, -3.5);
+    if (this.vehicle) target.addScaledVector(right, -2);
+    const r = this.raptor;
+    if (r.feet.distanceTo(target) < 5 && r.grounded) {
+      showToast("The Raptor is right here!");
+      return;
+    }
+    const far = Math.hypot(r.pos.x - target.x, r.pos.z - target.z) > 220 || Math.abs(r.pos.y - target.y) > 100;
+    if (far) {
+      const dir = new THREE.Vector3(r.pos.x - target.x, 0, r.pos.z - target.z);
+      if (dir.lengthSq() < 1) dir.set(1, 0, 0);
+      dir.normalize();
+      r.teleport(target.clone().addScaledVector(dir, 70).setY(target.y + 45 + r.footOffset), Math.atan2(-dir.x, -dir.z));
+    }
+    r.summon(target);
+    if (s.raptorStatus === 'parked') gameStore.setState({ raptorStatus: 'idle' });
+    if (quiet) return;
+    showToast('You whistle for the Raptor. Here it comes!');
+    this.audio.play('blip');
+    this.audio.play('magic', 0.6);
+  }
+
+  // ───────────────────────────────────────────── up in the sky
+
+  /**
+   * Deep in space the town below is a few pixels: skip drawing it. "Land" is every scene child that is low
+   * (y < SPACE_Y), not a light, not a sky layer, not the player rigs, and not an effect buffer (particles,
+   * water spray: frustumCulled is off for those).
+   */
+  private cullLand(): void {
+    const show = this.sky.landVisible;
+    const n = this.scene.children.length;
+    if (show ? this.landShown : this.landShown === false && n === this.sceneCount) return;
+    this.landShown = show;
+    this.sceneCount = n;
+    for (const o of this.scene.children) {
+      if ((o as THREE.Light).isLight || !o.frustumCulled || o === this.professor.group || o === this.raptor.group || this.sky.owns(o) || o.position.y >= SPACE_Y) continue;
+      o.visible = show;
+    }
+  }
+
+  /** "You've reached space" once per trip up, and a bonus the first time you land on each floating island. */
+  private updateSkyProgress(): void {
+    const y = this.playerPos.y;
+    if (!this.inSpace && y > 300) {
+      this.inSpace = true;
+      showToast("You've reached space! Gravity is low up here: big jumps!");
+      this.audio.play('magic');
+    } else if (this.inSpace && y < 260) this.inSpace = false;
+
+    const standing = this.onFoot ? this.professor : this.riding ? this.raptor : null;
+    if (!standing || !standing.grounded) return;
+    const isl = this.sky.islandAt(standing.feet);
+    if (isl && !isl.discovered) {
+      isl.discovered = true;
+      addPoints(25);
+      showToast(`Discovered ${isl.name}! +25 Lab Points`);
+      this.audio.play('reward');
+    }
+  }
+
+  // ───────────────────────────────────────────── throwing things around
+
+  /** Race mode on turbo (boosting, or still faster than normal top speed) bulldozes everything. */
+  private get ramming(): boolean {
+    return this.riding && this.raptor.mode === 'race' && (this.raptor.boosting || this.raptor.raceSpeed > 45);
+  }
+
+  /** Throw whatever the turbo-charged Raptor is about to hit, before it can block it. */
+  private ram(dt: number): void {
+    const r = this.raptor;
+    const ahead = r.pos.clone().addScaledVector(r.velocity, dt * 2);
+    const fwd = new THREE.Vector3(Math.sin(r.heading), 0, Math.cos(r.heading));
+    const speed = Math.abs(r.raceSpeed);
+    let hits = 0;
+    const throwDir = (p: THREE.Vector3) => {
+      const side = new THREE.Vector3(p.x - r.pos.x, 0, p.z - r.pos.z).normalize();
+      return fwd.clone().multiplyScalar(0.8).add(side.multiplyScalar(0.6)).normalize();
+    };
+    for (const car of this.traffic.near(ahead, 4.2)) {
+      this.traffic.beginFling(car);
+      const v = throwDir(car.agent.world).multiplyScalar(speed * 0.55 + 6).setY(18 + Math.random() * 6);
+      this.fling.launch(car.mesh, car.mesh.position.clone(), v, 0, (p) => this.traffic.endFling(car, p), 0.7);
+      hits++;
+    }
+    for (const veh of this.vehicles.near(ahead, 3.6)) {
+      if (veh.kind !== 'car' && veh.pos.distanceTo(ahead) > 2.8) continue;
+      this.vehicles.beginFling(veh);
+      const v = throwDir(veh.pos).multiplyScalar(speed * 0.55 + 6).setY(18 + Math.random() * 6);
+      this.fling.launch(veh.group, veh.group.position.clone(), v, 0, (p, h) => this.vehicles.endFling(veh, p, h), veh.kind === 'car' ? 0.7 : 1.2);
+      hits++;
+    }
+    for (const w of this.pedestrians.near(ahead, 2.6)) {
+      const body = this.pedestrians.beginFling(w);
+      const v = throwDir(w.pos).multiplyScalar(speed * 0.4 + 6).setY(20 + Math.random() * 6);
+      this.fling.launch(body, body.position.clone(), v, 0, (p) => this.pedestrians.endFling(w, p), 1.5);
+      hits++;
+    }
+    for (const t of this.mystery.thievesNear(ahead, 2.6)) {
+      const land = this.mystery.flingThief(t.thief);
+      const v = throwDir(t.pos).multiplyScalar(speed * 0.4 + 6).setY(20 + Math.random() * 6);
+      this.fling.launch(t.body, t.body.position.clone(), v, 0, (p) => land(p), 1.5);
+      hits++;
+    }
+    if (hits) {
+      this.particles.sparks(ahead.clone().setY(ahead.y + 0.5), 25 * hits);
+      this.audio.play('crash', 0.7);
+      this.rig.shake(0.3);
+    }
+  }
+
+  /** Throw everything within `radius` of `centre` outwards and up (heavy landings). */
+  private blast(centre: THREE.Vector3, radius: number, power: number): void {
+    const out = (p: THREE.Vector3, d: number, base: number) => {
+      const dir = new THREE.Vector3(p.x - centre.x, 0, p.z - centre.z);
+      if (dir.lengthSq() < 1e-4) dir.set(Math.random() - 0.5, 0, Math.random() - 0.5);
+      const k = (1 - d / radius) * power;
+      return dir.normalize().multiplyScalar(base * (0.5 + k)).setY(12 + 12 * k);
+    };
+    for (const car of this.traffic.near(centre, radius + 2)) {
+      const d = car.agent.world.distanceTo(centre);
+      this.traffic.beginFling(car);
+      this.fling.launch(car.mesh, car.mesh.position.clone(), out(car.agent.world, d, 10), 0, (p) => this.traffic.endFling(car, p), 0.7);
+    }
+    for (const veh of this.vehicles.near(centre, radius + 1)) {
+      const d = veh.pos.distanceTo(centre);
+      this.vehicles.beginFling(veh);
+      this.fling.launch(veh.group, veh.group.position.clone(), out(veh.pos, d, 10), 0, (p, h) => this.vehicles.endFling(veh, p, h), 1);
+    }
+    for (const w of this.pedestrians.near(centre, radius)) {
+      const d = w.pos.distanceTo(centre);
+      const body = this.pedestrians.beginFling(w);
+      this.fling.launch(body, body.position.clone(), out(w.pos, d, 12), 0, (p) => this.pedestrians.endFling(w, p), 1.5);
+    }
+    for (const t of this.mystery.thievesNear(centre, radius)) {
+      const d = t.pos.distanceTo(centre);
+      const land = this.mystery.flingThief(t.thief);
+      this.fling.launch(t.body, t.body.position.clone(), out(t.pos, d, 12), 0, (p) => land(p), 1.5);
+    }
+  }
+
+  private updateImpacts(dt: number): void {
+    for (const fx of this.impacts.slice()) {
+      fx.t += dt;
+      const k = Math.min(fx.t / 0.6, 1);
+      fx.ring.scale.setScalar(1 + k * (14 + 10 * fx.strength));
+      (fx.ring.material as THREE.MeshBasicMaterial).opacity = 0.8 * (1 - k);
+      (fx.crater.material as THREE.MeshBasicMaterial).opacity = 0.55 * Math.min(1, Math.max(0, (5 - fx.t) / 1.5));
+      if (fx.t > 5) {
+        this.scene.remove(fx.ring, fx.crater);
+        fx.ring.geometry.dispose();
+        fx.crater.geometry.dispose();
+        (fx.ring.material as THREE.Material).dispose();
+        (fx.crater.material as THREE.Material).dispose();
+        this.impacts.splice(this.impacts.indexOf(fx), 1);
+      }
+    }
+  }
+
   private handleRaptorEvents(): void {
     const ev = this.raptor.events.splice(0);
     for (const e of ev) {
       const feet = this.raptor.group.position;
+      if (e === 'impact') this.impact(feet, this.raptor.impactSpeed);
       if (e === 'transform') {
         this.particles.sparks(feet.clone().setY(feet.y + 2), 40, '#5ef2ff');
         this.particles.sparks(feet.clone().setY(feet.y + 2), 20, '#ffd166');

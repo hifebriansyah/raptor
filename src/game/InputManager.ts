@@ -175,12 +175,12 @@ export class InputManager {
   }
 
   get interact(): boolean {
-    return this.any(['KeyE', 'KeyF', 'Pad:X', 'Touch:Act'], this.pressed);
+    return this.any(['KeyE', 'Pad:X', 'Touch:Act'], this.pressed);
   }
 
   /** Advance dialogue / close panels. */
   get confirm(): boolean {
-    return this.any(['KeyE', 'KeyF', 'Space', 'Enter', 'Pad:A', 'Pad:X', 'Touch:Act', 'Touch:Jump'], this.pressed);
+    return this.any(['KeyE', 'Space', 'Enter', 'Pad:A', 'Pad:X', 'Touch:Act', 'Touch:Jump'], this.pressed);
   }
 
   get cancel(): boolean {
@@ -218,10 +218,20 @@ export class InputManager {
   modeRequest(): 'walk' | 'flight' | 'race' | 'boat' | 'cycle' | null {
     if (this.pressed.has('Digit1')) return 'walk';
     if (this.pressed.has('Digit2')) return 'flight';
-    if (this.pressed.has('Digit3')) return 'race';
-    if (this.pressed.has('Digit4')) return 'boat';
+    if (this.pressed.has('Digit3') || this.pressed.has('KeyV')) return 'race';
+    if (this.pressed.has('Digit4') || this.pressed.has('KeyB')) return 'boat';
     if (this.any(['KeyQ', 'Pad:RB', 'Pad:Y', 'Touch:Mode'], this.pressed)) return 'cycle';
     return null;
+  }
+
+  /** Toggle the Raptor following you around on foot (F). */
+  get toggleFollow(): boolean {
+    return this.pressed.has('KeyF');
+  }
+
+  /** Call the Raptor to you (R). */
+  get callRaptor(): boolean {
+    return this.pressed.has('KeyR');
   }
 
   get toggleMusic(): boolean {

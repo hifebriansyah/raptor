@@ -1,8 +1,12 @@
 import * as THREE from 'three';
 import type { InputManager } from '../game/InputManager';
 import type { PhysicsSystem } from '../systems/PhysicsSystem';
-import { WATER_Y, waterDepth } from '../game/Terrain';
-import { CharacterEntity, cameraRelative, dampAngle, part, type SteerOptions } from './CharacterEntity';
+import { SPACE_Y, WATER_Y, surfaceAt, waterDepth } from '../game/Terrain';
+import { CharacterEntity, MAX_FALL, cameraRelative, dampAngle, part, type SteerOptions } from './CharacterEntity';
+
+/** Parachute: sink rate and glide speed (m/s). */
+const CHUTE_SINK = 3.5;
+const CHUTE_GLIDE = 7;
 
 /** Water deeper than this and the Professor swims. */
 const SWIM_DEPTH = 1.3;
@@ -51,10 +55,36 @@ export class Professor extends CharacterEntity {
   update(dt: number, input: InputManager, opts: SteerOptions): void {
     if (this.riding) return;
     this.swimming = this.depth > SWIM_DEPTH;
+    this.updateParachute(dt);
     const dir = cameraRelative(input.moveAxis(), opts.camYaw);
-    const speed = (input.sprint ? SPRINT : WALK) * (this.swimming ? 0.4 : this.depth > 0.4 ? 0.7 : 1);
+    const speed = this.parachuting ? CHUTE_GLIDE : (input.sprint ? SPRINT : WALK) * (this.swimming ? 0.4 : this.depth > 0.4 ? 0.7 : 1);
     this.move(dt, dir.multiplyScalar(speed), input.jump && !this.swimming, opts.face === null);
     if (opts.face !== null) this.heading = dampAngle(this.heading, opts.face, 12, dt);
+  }
+
+  /** Floating down under a parachute. */
+  parachuting = false;
+  private chuteOpen = 0;
+  private readonly chute = new THREE.Group();
+
+  /** Open the parachute now (getting off the Raptor high up). */
+  deployParachute(): void {
+    if (this.parachuting || this.grounded) return;
+    this.parachuting = true;
+  }
+
+  /**
+   * Opens by itself on any long fall once inside the atmosphere (so jumping off a space island is
+   * safe), closes on landing. While open it brakes the fall to a gentle 3.5 m/s.
+   */
+  private updateParachute(dt: number): void {
+    const height = this.pos.y - this.footOffset - surfaceAt(this.pos.x, this.pos.z);
+    if (!this.parachuting && !this.grounded && this.vy < -8 && height > 18 && this.pos.y < SPACE_Y - 10) this.parachuting = true;
+    if (this.parachuting && (this.grounded || this.swimming)) this.parachuting = false;
+    // brake hard (≈ 60 m/s²) down to the canopy's gentle sink rate rather than stopping dead
+    // sink faster when high up (a re-entry from space shouldn't take minutes), gently near the ground
+    const sink = Math.max(CHUTE_SINK, Math.min(22, height * 0.07));
+    this.fallLimit = this.parachuting ? Math.max(sink, -this.vy - 60 * dt) : MAX_FALL;
   }
 
   /** Deep water: float with the head above the surface instead of walking on the sea floor. */
@@ -125,6 +155,21 @@ export class Professor extends CharacterEntity {
       return;
     }
     this.torso.rotation.x = this.riding && this.ridePose === 'motorbike' ? 0.2 : 0;
+    // Parachute canopy opens/closes and sways
+    this.chuteOpen += ((this.parachuting ? 1 : 0) - this.chuteOpen) * (1 - Math.exp(-(this.parachuting ? 6 : 10) * dt));
+    this.chute.visible = this.chuteOpen > 0.02;
+    this.chute.scale.set(this.chuteOpen, 0.3 + 0.7 * this.chuteOpen, this.chuteOpen);
+    this.chute.rotation.set(Math.sin(time * 1.3) * 0.08, 0, Math.sin(time * 1.7) * 0.1);
+    if (!this.riding && this.parachuting) {
+      // hanging from the lines: arms up holding the toggles, legs dangling
+      this.armL.rotation.set(-2.7, 0, 0.35);
+      this.armR.rotation.set(-2.7, 0, -0.35);
+      this.legL.rotation.set(0.15 + Math.sin(time * 2) * 0.1, 0, 0.05);
+      this.legR.rotation.set(0.15 - Math.sin(time * 2) * 0.1, 0, -0.05);
+      this.torso.rotation.x = 0;
+      this.torso.position.y = 0.95;
+      return;
+    }
     if (!this.riding && this.swimming) {
       // Front crawl: arms windmill, legs flutter, body leaning forward
       this.walkPhase += dt * (4 + this.horizontalSpeed * 2);
@@ -188,6 +233,31 @@ export class Professor extends CharacterEntity {
       arm.add(part(new THREE.BoxGeometry(0.13, 0.55, 0.15), coat, 0, -0.26, 0));
       arm.add(part(new THREE.BoxGeometry(0.11, 0.11, 0.11), skin, 0, -0.58, 0));
       this.torso.add(arm);
+    }
+    // Parachute: striped canopy with lines down to the shoulders (hidden until opened)
+    {
+      const colors = ['#e63946', '#ffffff', '#ffd166', '#ffffff'];
+      for (let i = 0; i < 8; i++) {
+        const seg = new THREE.Mesh(
+          new THREE.SphereGeometry(2.6, 6, 6, (i / 8) * Math.PI * 2, Math.PI / 4, 0, Math.PI / 2.4),
+          new THREE.MeshLambertMaterial({ color: colors[i % colors.length], side: THREE.DoubleSide, flatShading: true }),
+        );
+        seg.scale.set(1, 0.55, 1);
+        seg.castShadow = true;
+        this.chute.add(seg);
+      }
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+        const top = new THREE.Vector3(Math.cos(a) * 2.1, 0.4, Math.sin(a) * 2.1);
+        const bottom = new THREE.Vector3(Math.cos(a) * 0.2, -2.4, Math.sin(a) * 0.15);
+        const line = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, top.distanceTo(bottom), 4), new THREE.MeshBasicMaterial({ color: '#444444' }));
+        line.position.copy(top).add(bottom).multiplyScalar(0.5);
+        line.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), top.clone().sub(bottom).normalize());
+        this.chute.add(line);
+      }
+      this.chute.position.y = 4.4;
+      this.chute.visible = false;
+      this.group.add(this.chute);
     }
     // Handheld water blaster in the right hand: orange body, blue tank, nozzle pointing forward
     this.armR.add(part(new THREE.BoxGeometry(0.12, 0.14, 0.34), '#ff9f1c', 0, -0.6, 0.12));

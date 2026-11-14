@@ -45,6 +45,30 @@ export class RoadAgent {
     this.updateWorld();
   }
 
+  /** Put the agent back on the road nearest to `p` (after being thrown somewhere). */
+  placeNear(p: THREE.Vector3): void {
+    const { roadMin, roadMax, roadStep } = WORLD;
+    const clamp = (v: number) => Math.max(roadMin, Math.min(roadMax, v));
+    if (this.policy === 'ring') {
+      const R = roadMax;
+      const cands = [
+        { x: clamp(p.x), z: -R, dir: { x: 1, z: 0 } },
+        { x: R, z: clamp(p.z), dir: { x: 0, z: 1 } },
+        { x: clamp(p.x), z: R, dir: { x: -1, z: 0 } },
+        { x: -R, z: clamp(p.z), dir: { x: 0, z: -1 } },
+      ];
+      const best = cands.reduce((a, b) => (Math.hypot(b.x - p.x, b.z - p.z) < Math.hypot(a.x - p.x, a.z - p.z) ? b : a));
+      this.place(best.x, best.z, best.dir);
+      return;
+    }
+    const snap = (v: number) => clamp(roadMin + Math.round((v - roadMin) / roadStep) * roadStep);
+    const rx = snap(p.x);
+    const rz = snap(p.z);
+    const s = this.rand() < 0.5 ? 1 : -1;
+    if (Math.abs(p.x - rx) < Math.abs(p.z - rz)) this.place(rx, clamp(p.z), { x: 0, z: s });
+    else this.place(clamp(p.x), rz, { x: s, z: 0 });
+  }
+
   get heading(): number {
     return Math.atan2(this.dir.x, this.dir.z);
   }

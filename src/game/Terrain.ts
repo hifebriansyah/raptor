@@ -18,6 +18,15 @@ const SHELF = 9;
 export const MAIN_ISLAND = { half: 280 };
 export const PALM_ISLE = { x: 500, z: -30, r: 110 };
 
+/** Space begins around here: the sky turns black and gravity drops to moon level. */
+export const SPACE_Y = 300;
+
+/** Gravity at a height: Earth-like below ~250 m, moon-like (35 %) above ~350 m. */
+export function gravityAt(y: number): number {
+  const t = Math.min(1, Math.max(0, (y - (SPACE_Y - 50)) / 100));
+  return -30 * (1 - 0.65 * t);
+}
+
 /** The playable area (invisible walls stand just outside). */
 export const BOUNDS = { minX: -300, maxX: 640, minZ: -300, maxZ: 300 };
 

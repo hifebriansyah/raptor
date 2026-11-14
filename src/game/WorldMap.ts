@@ -294,7 +294,7 @@ export class WorldMap {
 
   private buildBoundary(): void {
     // Invisible walls around both islands and the sea between them.
-    const h = 300;
+    const h = 2000; // tall enough to fence in space too
     const t = 2;
     const { minX, maxX, minZ, maxZ } = BOUNDS;
     const cx = (minX + maxX) / 2;

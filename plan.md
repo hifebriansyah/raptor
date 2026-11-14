@@ -188,7 +188,13 @@ raptor/
 - **Double jump:** press Space again in mid-air in Walk mode to take off into Flight.
 - **Jumps:** Professor 2 m, Raptor 6 m, Raptor running jump 12 m.
 - **Water and Palm Isle:** the sea is real now (shallow shelf, 2.8 m deep): the Professor swims, the Raptor and vehicles wade slowly. Palm Isle sits east of the main island (palms, huts, lighthouse, piers, a pirate-shack thief hideout). The Raptor gained a 4th mode, **Boat** (key 4), a jet-boat for crossing the sea.
-- **Thruster:** auto-refills after a short pause; emptying it overheats it until 30 %.
+- **Thruster:** auto-refills after a short pause; emptying it overheats it until 30 %. Race mode uses it 3× more efficiently (≈ 12 s per meter).
+- **Race mode:** 42 m/s (3.2× Walk), boost 66 m/s; `V` enters it, Space returns to Walk, Ctrl/C drifts; the water gun works while driving.
+- **Sky and space:** a sky that fades to space with stars and a ringed planet above ~300 m, moon gravity up there, a 900 m flight ceiling with fast climbing (Shift + Space), and four floating islands (Cloud Isle, two Star Isles, Moon Rock) with a discovery bonus. Inspired by flying into space in LEGO-style hero games.
+- **Mode keys:** `V` Race, `B` Boat; double-tap Space returns to Walk from Race or Boat (in Walk it takes off into Flight).
+- **Calling and following:** `R` calls the Raptor (it flies over and lands beside you, swooping in from out of sight when far away or stranded in space); `F` makes it follow you on foot (F again: stay). It can't be called while stolen or in the attic.
+- **Parachute:** getting off the Raptor high in the air opens a parachute; falling from a space island opens it automatically on re-entry (below ~290 m). Sink rate eases from fast (high up) to 3.5 m/s near the ground.
+- **Turbo ram and landing blasts:** boosting in Race mode throws whatever you hit; heavy landings (≈ 8 m+ falls) make an impact shockwave that throws everything nearby. Thrown things recover by themselves (FlingSystem).
 - **Controls:** `1/2/3` or `Q` switch Walk/Flight/Race; click (or `J`) sprays; Space climbs in flight and drifts in race; `Ctrl`/`C` descends; Shift runs/boosts (boost uses thruster energy). Gamepad and on-screen touch controls are supported.
 - **Water:** the Raptor's tank refills at red hydrants on intersection corners, park fountains and the Lab pad. On foot the Professor has a weak handheld blaster that never runs dry (used on thieves, and for splashing passers-by).
 - **Living town:** ambient cars drive the road grid and brake/honk for obstacles; ~40 pedestrians walk the sidewalks, wave at the Professor, scatter from a charging Raptor and shake off water. (Added on request.)
