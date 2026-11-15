@@ -53,8 +53,7 @@ export class ThugSystem {
       agent.placeRandom();
       if (!awayFrom || agent.world.distanceTo(awayFrom) > 80) break;
     }
-    const body = new Humanoid({ skin: ['#e0ac7e', '#c68642', '#f2c9a0', '#8d5524'][this.thugs.length % 4], shirt: LOOKS[this.thugs.length % LOOKS.length], pants: '#1b1b1b', hair: '#111111', hairStyle: 'cap', hat: '#111111' });
-    body.head.add(part(new THREE.BoxGeometry(0.34, 0.08, 0.32), '#111111', 0, 0.12, 0.01)); // mask
+    const body = new Humanoid({ skin: ['#e0ac7e', '#c68642', '#f2c9a0', '#8d5524'][this.thugs.length % 4], shirt: LOOKS[this.thugs.length % LOOKS.length], pants: '#1b1b1b', hair: '#111111', hairStyle: 'cap', hat: '#111111', model: 'thug' });
     const stars = new THREE.Group();
     for (let i = 0; i < 3; i++) {
       const s = part(new THREE.OctahedronGeometry(0.1, 0), '#ffd166', Math.cos((i / 3) * Math.PI * 2) * 0.35, 0, Math.sin((i / 3) * Math.PI * 2) * 0.35, true);

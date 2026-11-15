@@ -147,7 +147,7 @@ export class Menu {
       body.append(this.back());
       body.append(el('div', 'menu-controls', ...CONTROL_ROWS.map(([k, v]) => el('div', 'help-row', el('kbd', '', k), el('span', '', v)))));
     }
-    this.card.replaceChildren(close, title, body, el('div', 'menu-foot', 'Tab or P opens this menu · Esc frees the mouse'));
+    this.card.replaceChildren(close, title, body, el('div', 'menu-foot', 'Tab or P opens this menu · Esc frees the mouse · 3D models by Kenney (kenney.nl, CC0)'));
   }
 
   private go(page: Page): void {

@@ -37,6 +37,7 @@ import { UPGRADES, UpgradeBench, buyUpgrade } from '../ui/UpgradeBench';
 import { Minimap, type MinimapMarker } from '../ui/Minimap';
 import { Menu } from '../ui/Menu';
 import { Graphics } from './Graphics';
+import { Models } from './Models';
 import { CameraRig } from './CameraRig';
 import { EventDirector } from './EventDirector';
 import { SkyIslands } from './SkyIslands';
@@ -264,6 +265,11 @@ export class GameEngine {
     gameStore.subscribe((st, prev) => {
       if (st.cheats !== prev.cheats) applyCheats();
     });
+    const GUN_INDEX = { water: 0, size: 1, teleport: 2, transform: 3, megaphone: 4 } as const;
+    this.professor.setGun(GUN_INDEX[gameStore.getState().gun]);
+    gameStore.subscribe((st, prev) => {
+      if (st.gun !== prev.gun) this.professor.setGun(GUN_INDEX[st.gun]);
+    });
     this.hud.onZoom = (steps) => this.input.zoomBy(steps);
     this.hud.onZoomReset = () => this.input.resetZoom();
     // Esc (or switching windows) releases the mouse: pause into the menu
@@ -286,8 +292,8 @@ export class GameEngine {
     this.resize();
   }
 
-  static async create(container: HTMLElement): Promise<GameEngine> {
-    const physics = await PhysicsSystem.create();
+  static async create(container: HTMLElement, onProgress?: (k: number) => void): Promise<GameEngine> {
+    const [physics] = await Promise.all([PhysicsSystem.create(), Models.load(onProgress)]);
     return new GameEngine(container, physics);
   }
 
@@ -943,6 +949,7 @@ export class GameEngine {
     this.vehicle = v;
     v.driven = true;
     this.professor.mount(v.seat, v.kind);
+    if (v.model?.hideRider) this.professor.group.visible = false; // closed Kenney cabin
   }
 
   /** GTA-style at sea: climb aboard an AI boat and the skipper dives overboard. */
@@ -1204,6 +1211,7 @@ export class GameEngine {
     const car = this.train.cars[i];
     this.trainRide = { car: i, cab };
     this.professor.mount(cab ? car.seat : car.passengerSeat, 'car');
+    if (Models.has('monorail_trainFront')) this.professor.group.visible = false; // closed Kenney carriage
     if (cab) {
       this.train.driver = 'player';
       if (this.train.conductor) this.train.conductor.root.visible = false;

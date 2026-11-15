@@ -3,6 +3,7 @@ import { part } from '../entities/CharacterEntity';
 import type { PhysicsSystem } from '../systems/PhysicsSystem';
 import type { MinimapMarker } from '../ui/Minimap';
 import { SPACE_Y } from './Terrain';
+import { Models } from './Models';
 
 export interface SkyIsland {
   name: string;
@@ -199,12 +200,27 @@ export class SkyIslands {
     const isl = this.islands.find((i) => i.name === 'Moon Rock')!;
     const g = new THREE.Group();
     g.position.set(isl.x - 10, isl.y, isl.z - 6);
-    g.add(part(new THREE.CylinderGeometry(7, 7, 4, 20), '#ced4da', 0, 2, 0));
-    const dome = new THREE.Mesh(new THREE.SphereGeometry(7, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshLambertMaterial({ color: '#e9ecef', flatShading: true }));
-    dome.position.y = 4;
-    g.add(dome);
-    g.add(part(new THREE.BoxGeometry(2.2, 2.8, 2), '#adb5bd', 0, 1.4, 7.4));
-    g.add(part(new THREE.BoxGeometry(1.4, 2.4, 0.1), '#1b2a49', 0, 1.2, 8.42, true));
+    if (Models.has('hangar_roundGlass')) {
+      // Kenney space kit (CC0): a glass-domed hangar, a dish, a rover and an astronaut
+      g.add(Models.get('hangar_roundGlass', { width: 18 }));
+      const dish = Models.get('satelliteDish_large', { height: 7 });
+      dish.position.set(-9, 0, -4);
+      const rover = Models.get('rover', { length: 4 });
+      rover.position.set(9, 0, 6);
+      rover.rotation.y = -0.6;
+      const astro = Models.get('astronautA', { height: 1.9 });
+      astro.position.set(3, 0, 10);
+      astro.rotation.y = Math.PI;
+      g.add(dish, rover, astro);
+      g.add(part(new THREE.BoxGeometry(1.6, 2.6, 0.1), '#1b2a49', 0, 1.3, 8.42, true)); // the door
+    } else {
+      g.add(part(new THREE.CylinderGeometry(7, 7, 4, 20), '#ced4da', 0, 2, 0));
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(7, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshLambertMaterial({ color: '#e9ecef', flatShading: true }));
+      dome.position.y = 4;
+      g.add(dome);
+      g.add(part(new THREE.BoxGeometry(2.2, 2.8, 2), '#adb5bd', 0, 1.4, 7.4));
+      g.add(part(new THREE.BoxGeometry(1.4, 2.4, 0.1), '#1b2a49', 0, 1.2, 8.42, true));
+    }
     g.add(part(new THREE.CylinderGeometry(0.08, 0.08, 6, 6), '#adb5bd', 4, 9, 0));
     g.add(part(new THREE.BoxGeometry(2.4, 1.4, 0.05), '#e63946', 5.2, 11, 0)); // a flag
     this.scene.add(g);

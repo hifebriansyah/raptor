@@ -2,7 +2,7 @@
 
 A cheerful low-poly open-world sandbox in the browser, in the spirit of LEGO City games. You are an eccentric 36-year-old Professor with a home-made **Mecha Raptor** that walks, flies, races and grows into a Titan. You put out fires, fight thugs and zap them to jail, ride the city train, go into any building, and fly all the way up to space.
 
-Built with **Three.js + TypeScript + Vite**, **Rapier** physics, a plain DOM HUD driven by **zustand**, **Lucide** icons and procedural **Web Audio**. Everything in the game is built from primitives and synthesised; the only image files are the app icons.
+Built with **Three.js + TypeScript + Vite**, **Rapier** physics, a plain DOM HUD driven by **zustand**, **Lucide** icons and procedural **Web Audio**. Cars, boats, houses, downtown buildings, trees, the city train, the Moon Base, the rocket, meteors and the Lab Guns are **Kenney** 3D models (CC0, [kenney.nl](https://kenney.nl), in `public/models/`); the characters, the Raptor and everything else are built from primitives in code. Sound is all synthesised.
 
 **Status:** every phase of [`plan.md`](plan.md) is built (phases 1–10). Playable on desktop (keyboard + mouse or gamepad) and on touch screens, and installable as an app.
 
@@ -160,6 +160,21 @@ Gamepad works: left stick moves, right stick looks, A jumps, X uses, B punches, 
 - Still here from earlier phases: **fires**, **rival races**, the **missing-Raptor mystery** (theft, or a cookie run up to Grandma's 3rd-floor attic), Lab upgrades.
 - **Saved** in the browser: points, upgrades, options, cookies, pads, jailed thugs, bricks, bolts, cheats and Super Builds.
 
+## 3D models (Kenney)
+
+The raw Kenney downloads live in `kenney/` (git-ignored, about 57 MB). The game only ships the models it uses, copied to `public/models/` (about 5 MB):
+
+| Folder | From | Used for |
+| --- | --- | --- |
+| `cars/` | Car Kit | traffic and drivable cars (sedans, SUVs, taxis, sports, race cars, vans, delivery, ambulance, garbage truck, police, fire truck), cones and boxes as props |
+| `boats/` | Watercraft Pack | speedboats, fishing boat, sailing yacht, tug (coastguard) |
+| `suburb/` | City Kit (Suburban) | the outskirts' and Uptown's houses, trees |
+| `town/` | Modular Buildings | downtown towers and shops (tinted for variety) |
+| `space/` | Space Kit | the city train (monorail cars), Moon Base hangar, dish, rover, astronaut, rocket, meteor, space rock, crater |
+| `blasters/` | Blaster Kit | the five Lab Guns in the Professor's hand |
+
+`game/Models.ts` loads them all at boot, puts each model's bottom centre at its origin, and hands out scaled copies. It also bakes static copies (buildings, trees) into a few merged meshes. If a model fails to load, the game falls back to its hand-built version. To use another Kenney model, copy its `.glb` (and its `Textures/` folder, if any) into `public/models/<folder>/` and add the name to the list in `Models.ts`.
+
 ## Speeds
 
 Top speeds in metres per second (km/h in brackets). *Boost/run* is with Shift. Sugar Rush adds 30 %; each Turbo Thrusters level adds 12 % to boosts.
@@ -189,7 +204,7 @@ Jumps: Professor 2 m · Raptor 6 m · Raptor running jump 12 m.
 ```text
 src/
   main.ts                    boot, save/load, PWA setup
-  game/                      GameEngine (loop + rules), WorldMap, Uptown (hills, tunnel, observatory),
+  game/                      GameEngine (loop + rules), Models (Kenney loader + batching), WorldMap, Uptown,
                              Terrain (heights, interiors floor), CameraRig, InputManager, EventDirector,
                              SkyIslands, Graphics (shading presets)
   entities/                  Professor, MechaRaptor, Humanoid, NPCManager (family + routines),
@@ -201,7 +216,7 @@ src/
   state/gameStore.ts         zustand store (HUD state, settings, saves)
   ui/                        HUD, Menu, Minimap, TravelMap, DialogueBox, Portraits, IrisWipe,
                              PremonitionModal, UpgradeBench, TouchControls, install, hud.css
-public/                      manifest.webmanifest, sw.js, icons/
+public/                      manifest.webmanifest, sw.js, icons/, models/ (Kenney .glb)
 ```
 
 Physics runs at a fixed 60 Hz with interpolated rendering. Rapier's kinematic character controller handles walls, ramps, buildings, cars and the viaduct, but **not the ground**. `game/Terrain.ts` describes the floor (flat town, hills, the tunnel, sea floor) and characters are kept on it by hand. Interiors are built 600 m under the town, where the floor switches to the interior level. The town's LOD hides scene objects from the camera by moving them to another render layer, so systems that hide their own objects are unaffected.
@@ -214,4 +229,6 @@ Physics runs at a fixed 60 Hz with interpolated rendering. Rapier's kinematic ch
 - Traffic only drives the town grid, not the Uptown roads.
 - The bus, fire truck and train have short collision capsules for their length.
 - Dialogue portraits are placeholder drawings (drop real art into `public/portraits/`, see `ui/Portraits.ts`).
+- Kenney cars and the monorail have opaque windows, so drivers and the Professor aren't visible inside them (they still are in boats, on bikes and in the hand-built bus).
+- Busy views make around 1,500 draw calls, mostly the people and street props, which can be heavy on phones.
 - Sound starts after your first click or key press (browser autoplay rules).

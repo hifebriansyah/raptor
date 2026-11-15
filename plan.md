@@ -19,6 +19,7 @@
 ## 2. Tech Stack (as built)
 
 - **Build:** Vite 7 + TypeScript 5.9 (strict). `npm run dev` (port 5195), `npm run build`, `npm run build:local` (base `/for-fun/raptor/` for Apache at http://localhost/for-fun/raptor/).
+- **Models:** Kenney CC0 packs (car kit, watercraft, suburban city kit, modular buildings, space kit, blaster kit) loaded with `GLTFLoader` at boot (`game/Models.ts`).
 - **Rendering:** `three` 0.187, flat-shaded low-poly materials, sun shadows (PCF), hemisphere light, merged/instanced geometry for town blocks.
 - **Physics:** `@dimforge/rapier3d-compat` kinematic character controllers. No ground collider: `game/Terrain.ts` defines the floor and characters are clamped to it by hand (fixes sinking/tripping seen with cuboid and heightfield grounds).
 - **Loop:** fixed 60 Hz simulation, interpolated rendering.
@@ -135,6 +136,7 @@ Earlier phases 1–4 (sandbox MVP; flight, race and water gun; fires, Grandma, m
 - **Cars:** one model builder for traffic and taken cars: glass cabin, seats, steering wheel, a seated driver, flashing beacons on police cars and fire trucks.
 - **4-lane roads:** the ring road (x and z = ±240) plus the avenues x = −120 and z = 120, 18 m wide. Blocks shrink to fit; some cars take the outer lane; sidewalks move out.
 - **Hills:** Uptown is a new 400 × 190 m district joined to the north edge (Observatory Hill 30 m, an east hill 14 m). The avenue x = −120 runs through a cutting and a tunnel. Palm Isle gained a 9 m lighthouse hill, and the town a 3.5 m sunken park. `floorAt(x, z, y)` takes the asker's height so the tunnel works.
+- **Kenney models (CC0):** cars, boats, suburban houses, downtown buildings, trees, the monorail train, the Moon Base, the rocket, meteors and blasters come from six Kenney packs (`public/models/`). Buildings are scaled uniformly to fit their lots, so height now follows the model. Static copies are baked into merged meshes. Every use falls back to the hand-built model if loading fails. Kenney vehicles have opaque windows, so riders inside are hidden.
 - **Grandma's house:** no longer walk-in. Press E at the front door to enter a three-floor interior (ground floor, bedrooms, attic on the 3rd floor). The cookie-run Raptor waits in that attic; waking it rides you out into the yard. Grandma stays on her porch all day instead of following a routine.
 - **Family:** Grandma is the Professor's mother; the grandchildren Leo and Mia became his sons Leo (11) and Max (9); his wife Gwen wears the Godzilla suit. Routines walk simple L-shaped sidewalk routes; people "go inside" buildings (hidden), and you meet them in that interior.
 - **Interiors:** built on the fly 600 m under the town (the floor rule switches below −300 m) and torn down on leaving. Ceilings don't cast shadows so the sun still lights rooms. The Raptor can only follow you into the Lab hangar (and the Moon Base).

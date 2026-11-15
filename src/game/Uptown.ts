@@ -3,8 +3,10 @@ import { part } from '../entities/CharacterEntity';
 import type { PhysicsSystem } from '../systems/PhysicsSystem';
 import { OBSERVATORY, TUNNEL, UPTOWN, WATER_Y, floorAt, hillHeight, isLand } from './Terrain';
 import type { BuildingDoor, MapFeature, SpecialDoor } from './WorldMap';
+import { Models, SUBURB_FRONT, type StaticBatch } from './Models';
 
 interface WorldHooks {
+  batch: StaticBatch;
   features: MapFeature[];
   doors: BuildingDoor[];
   specialDoors: SpecialDoor[];
@@ -295,6 +297,31 @@ export class Uptown {
       const topG = Math.max(...corners);
       const color = palette[Math.floor(this.rand() * palette.length)];
       this.box(x, base - 1 + (topG - base + 1) / 2, z, w + 0.6, topG - base + 1, d + 0.6, '#b5a48b');
+      const toHill0 = Math.atan2(OBSERVATORY.x - x, OBSERVATORY.z - z);
+      const facing0 = Math.round(toHill0 / (Math.PI / 2)) * (Math.PI / 2);
+      const kname = `house_type${String(1 + Math.floor(this.rand() * 21)).padStart(2, '0')}`;
+      if (Models.has(kname)) {
+        // a Kenney suburban house (CC0) on the plinth, facing the hill road
+        const size = Models.size(kname);
+        const across = Math.abs(Math.sin(facing0 + SUBURB_FRONT)) > 0.5;
+        const fx = across ? size.z : size.x;
+        const fz = across ? size.x : size.z;
+        const sc = Math.min((w + 0.6) / fx, (d + 0.6) / fz);
+        const obj = Models.get(kname);
+        obj.children[0].scale.setScalar(sc);
+        obj.position.set(x, topG, z);
+        obj.rotation.y = facing0 + SUBURB_FRONT;
+        this.world.batch.add(obj);
+        const H = size.y * sc;
+        this.physics.addStaticBox(new THREE.Vector3(x, topG + H / 2, z), new THREE.Vector3((fx * sc) / 2, H / 2, (fz * sc) / 2));
+        const fxx = Math.sin(facing0);
+        const fzz = Math.cos(facing0);
+        const door = new THREE.Vector3(x + fxx * ((fx * sc) / 2 + 0.3), topG, z + fzz * ((fz * sc) / 2 + 0.3));
+        this.world.doors.push({ pos: door, facing: facing0, building: { x, z, w: fx * sc, d: fz * sc, h: H }, kind: 'house', color });
+        this.world.features.push({ kind: 'building', x, z, w: fx * sc, d: fz * sc, h: H, color });
+        if (this.rand() < 0.7) this.world.addTree(new THREE.Vector3(x + (this.rand() < 0.5 ? -1 : 1) * (w / 2 + 3), 0, z + (this.rand() - 0.5) * d));
+        continue;
+      }
       this.box(x, topG + h / 2, z, w, h, d, color);
       // pitched roof
       const roof = new THREE.Mesh(new THREE.CylinderGeometry(0.01, (w / 2 + 0.6) * Math.SQRT2, 2.6, 4, 1).rotateY(Math.PI / 4), this.mat('#c0504d'));

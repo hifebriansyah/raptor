@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { part } from '../entities/CharacterEntity';
 import type { GameEngine } from '../game/GameEngine';
 import { floorAt } from '../game/Terrain';
+import { Models } from '../game/Models';
 import { addPoints, clearObjective, setObjective, showToast } from '../state/gameStore';
 import type { MinimapMarker } from '../ui/Minimap';
 
@@ -70,9 +71,14 @@ export class SandboxEvents {
     const z = THREE.MathUtils.clamp(me.z + Math.sin(a) * r, -250, 250);
     const target = new THREE.Vector3(x, floorAt(x, z), z);
     const mesh = new THREE.Group();
-    mesh.add(part(new THREE.IcosahedronGeometry(2.2, 0), '#5c4033'));
-    mesh.add(part(new THREE.IcosahedronGeometry(2.6, 0), '#ff7b00', 0, 0, 0, true));
-    (mesh.children[1] as THREE.Mesh).material = new THREE.MeshBasicMaterial({ color: '#ff7b00', transparent: true, opacity: 0.4 });
+    if (Models.has('meteor_detailed')) {
+      const rock = Models.get('meteor_detailed', { width: 4.5 });
+      rock.position.y = -1.8;
+      mesh.add(rock);
+    } else mesh.add(part(new THREE.IcosahedronGeometry(2.2, 0), '#5c4033'));
+    const glow = part(new THREE.IcosahedronGeometry(2.8, 0), '#ff7b00', 0, 0, 0, true);
+    glow.material = new THREE.MeshBasicMaterial({ color: '#ff7b00', transparent: true, opacity: 0.35 });
+    mesh.add(glow);
     const pos = target.clone().add(new THREE.Vector3(120, 420, -80));
     mesh.position.copy(pos);
     g.scene.add(mesh);
@@ -204,8 +210,20 @@ export class SandboxEvents {
         g.scene.remove(mt.mesh);
         g.meteorImpact(mt.target.clone());
         this.rock = new THREE.Group();
-        this.rock.add(part(new THREE.IcosahedronGeometry(1.2, 0), '#5c4033'));
-        this.rock.add(part(new THREE.OctahedronGeometry(0.5, 0), '#7cf3ff', 0.6, 0.8, 0.2, true));
+        if (Models.has('rock_crystals')) {
+          const r = Models.get('rock_crystals', { width: 2.6 });
+          r.position.y = -0.8;
+          this.rock.add(r);
+          if (Models.has('craterLarge')) {
+            const crater = Models.get('craterLarge', { width: 14 });
+            crater.position.copy(mt.target).setY(mt.target.y - 0.3);
+            g.scene.add(crater);
+            setTimeout(() => g.scene.remove(crater), 60000);
+          }
+        } else {
+          this.rock.add(part(new THREE.IcosahedronGeometry(1.2, 0), '#5c4033'));
+          this.rock.add(part(new THREE.OctahedronGeometry(0.5, 0), '#7cf3ff', 0.6, 0.8, 0.2, true));
+        }
         this.rock.position.copy(mt.target).setY(mt.target.y + 0.8);
         g.scene.add(this.rock);
         this.meteor = null;

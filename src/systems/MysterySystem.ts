@@ -158,8 +158,7 @@ export class MysterySystem {
   }
 
   private spawnThief(spot: THREE.Vector3): void {
-    const body = new Humanoid({ skin: '#e0ac7e', shirt: '#2b2d42', pants: '#1b1b1b', hair: '#111111', hairStyle: 'cap', hat: '#111111', scale: 1 });
-    body.head.add(part(new THREE.BoxGeometry(0.34, 0.1, 0.32), '#111111', 0, 0.12, 0.01)); // bandit mask
+    const body = new Humanoid({ skin: '#e0ac7e', shirt: '#2b2d42', pants: '#1b1b1b', hair: '#111111', hairStyle: 'cap', hat: '#111111', scale: 1, model: 'thug' });
     this.game.scene.add(body.root);
     const t: Thief = {
       body,

@@ -10,7 +10,9 @@ loadSave();
 startAutoSave();
 setupInstall();
 
-GameEngine.create(app)
+GameEngine.create(app, (k) => {
+  if (loading) loading.textContent = `Unpacking the toy box… ${Math.round(k * 100)}%`;
+})
   .then((game) => {
     game.start();
     // Dev-only handle for poking at the game from the browser console.

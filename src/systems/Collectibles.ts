@@ -5,6 +5,7 @@ import { OBSERVATORY, LIGHTHOUSE_HILL, PARK_BASIN, PALM_ISLE, UPTOWN, floorAt } 
 import { WORLD, roadWidthX, roadWidthZ } from '../game/WorldMap';
 import type { RAPIER } from './PhysicsSystem';
 import { addPoints, gameStore, showToast } from '../state/gameStore';
+import { Models } from '../game/Models';
 
 interface Prop {
   mesh: THREE.Group;
@@ -90,7 +91,7 @@ export class Collectibles {
   private placeProps(): void {
     const { roadMin, roadMax, roadStep } = WORLD;
     const rand = mulberry(4040);
-    const kinds = ['bench', 'bin', 'crate', 'mailbox', 'phone', 'barrel'];
+    const kinds = ['bench', 'bin', 'crate', 'mailbox', 'phone', 'barrel', 'cone'];
     for (let x = roadMin; x <= roadMax; x += roadStep) {
       for (let z = roadMin; z <= roadMax; z += roadStep) {
         for (let k = 0; k < 2; k++) {
@@ -125,9 +126,15 @@ export class Collectibles {
       m.add(part(new THREE.CylinderGeometry(0.3, 0.26, 0.9, 8), '#2a9d8f', 0, 0.45, 0));
       m.add(part(new THREE.CylinderGeometry(0.33, 0.33, 0.08, 8), '#264653', 0, 0.92, 0));
     } else if (kind === 'crate') {
-      m.add(part(new THREE.BoxGeometry(0.9, 0.9, 0.9), '#d4a373', 0, 0.45, 0));
-      m.add(part(new THREE.BoxGeometry(0.95, 0.12, 0.95), '#bc6c25', 0, 0.45, 0));
+      if (Models.has('box')) m.add(Models.get('box', { width: 0.95 }));
+      else {
+        m.add(part(new THREE.BoxGeometry(0.9, 0.9, 0.9), '#d4a373', 0, 0.45, 0));
+        m.add(part(new THREE.BoxGeometry(0.95, 0.12, 0.95), '#bc6c25', 0, 0.45, 0));
+      }
       half = new THREE.Vector3(0.45, 0.45, 0.45);
+    } else if (kind === 'cone' && Models.has('cone')) {
+      m.add(Models.get('cone', { height: 0.9 }));
+      half = new THREE.Vector3(0.3, 0.45, 0.3);
     } else if (kind === 'mailbox') {
       m.add(part(new THREE.BoxGeometry(0.5, 0.9, 0.5), '#e63946', 0, 0.75, 0));
       m.add(part(new THREE.BoxGeometry(0.15, 0.3, 0.15), '#222222', 0, 0.15, 0));
@@ -329,6 +336,20 @@ export class Collectibles {
       p.mesh.rotation.copy(p.rotTo);
     }
     for (const c of b.colliders) this.g.physics.addStaticBox(c.pos, c.half, c.rot);
+    if (b.id === 'launchpad' && Models.has('rocket_baseA')) {
+      // a Kenney rocket (CC0) standing beside the pad
+      const rocket = new THREE.Group();
+      let y = 0;
+      for (const part2 of ['rocket_baseA', 'rocket_fuelA', 'rocket_fuelA', 'rocket_topA']) {
+        const p2 = Models.get(part2, { width: 4 });
+        p2.position.y = y;
+        y += Models.size(part2).y * (4 / Models.size(part2).x);
+        rocket.add(p2);
+      }
+      rocket.position.set(-207, 0, 262);
+      this.g.scene.add(rocket);
+      this.g.physics.addStaticCylinder(new THREE.Vector3(-207, y / 2, 262), y / 2, 2);
+    }
     if (silent) return;
     if (!gameStore.getState().superBuilds.includes(b.id)) gameStore.setState((s) => ({ superBuilds: [...s.superBuilds, b.id] }));
     addPoints(50);

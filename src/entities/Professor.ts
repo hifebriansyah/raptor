@@ -1,6 +1,8 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { InputManager } from '../game/InputManager';
 import type { PhysicsSystem } from '../systems/PhysicsSystem';
+import { Models } from '../game/Models';
 import { SPACE_Y, WATER_Y, surfaceAt, waterDepth } from '../game/Terrain';
 import { CharacterEntity, MAX_FALL, cameraRelative, dampAngle, part, type SteerOptions } from './CharacterEntity';
 
@@ -35,6 +37,32 @@ export class Professor extends CharacterEntity {
   private readonly armL = new THREE.Group();
   private readonly armR = new THREE.Group();
   private readonly torso = new THREE.Group();
+  /** Holds the Lab Gun model in the right hand. */
+  private readonly gunHolder = new THREE.Group();
+
+  /** Show Lab Gun `i` (0 water … 4 megaphone): Kenney blasters when loaded, else a toy box gun. */
+  private gunIndex = 0;
+
+  setGun(i: number): void {
+    this.gunIndex = i;
+    this.gunHolder.clear();
+    // hide the blaster baked into the Blender Professor model while a Kenney Lab Gun is in hand
+    const kenney = Models.has(['blasterA', 'blasterB', 'blasterC', 'blasterD', 'blasterE'][i] ?? 'blasterA');
+    for (const c of this.armR.children) if (c.name.startsWith('Blaster')) c.visible = !kenney;
+    const name = ['blasterA', 'blasterB', 'blasterC', 'blasterD', 'blasterE'][i] ?? 'blasterA';
+    if (Models.has(name)) {
+      const gun = Models.get(name, { length: 0.55 });
+      // Kenney blasters point down +z with the grip below: tip the barrel along the arm (−y), grip
+      // towards the arm's −z, so it aims where the arm points; slide it forward so the grip is in the hand
+      gun.rotation.set(Math.PI / 2, 0, 0);
+      gun.position.set(0, -0.78, 0.04);
+      this.gunHolder.add(gun);
+    } else {
+      this.gunHolder.add(part(new THREE.BoxGeometry(0.12, 0.14, 0.34), '#ff9f1c', 0, -0.6, 0.12));
+      this.gunHolder.add(part(new THREE.CylinderGeometry(0.07, 0.07, 0.18, 8), '#4cc9f0', 0, -0.5, 0.02));
+    }
+  }
+
   /** Head group (Big Head cheat scales it). */
   readonly head = new THREE.Group();
   private walkPhase = 0;
@@ -379,8 +407,8 @@ export class Professor extends CharacterEntity {
       this.group.add(this.chute);
     }
     // Handheld water blaster in the right hand: orange body, blue tank, nozzle pointing forward
-    this.armR.add(part(new THREE.BoxGeometry(0.12, 0.14, 0.34), '#ff9f1c', 0, -0.6, 0.12));
-    this.armR.add(part(new THREE.CylinderGeometry(0.07, 0.07, 0.18, 8), '#4cc9f0', 0, -0.5, 0.02));
+    this.armR.add(this.gunHolder);
+    this.setGun(0);
     this.nozzle.position.set(0, -0.6, 0.32);
     this.armR.add(this.nozzle);
 
@@ -402,5 +430,52 @@ export class Professor extends CharacterEntity {
     head.add(part(new THREE.CylinderGeometry(0.06, 0.06, 0.05, 10).rotateX(Math.PI / 2), '#ffd166', 0.08, 0.25, 0.17, true));
     head.add(part(new THREE.BoxGeometry(0.05, 0.05, 0.02), '#222222', -0.08, 0.12, 0.165));
     head.add(part(new THREE.BoxGeometry(0.05, 0.05, 0.02), '#222222', 0.08, 0.12, 0.165));
+
+    this.loadGlbModel();
+  }
+
+  /** Replaces procedural fallback meshes with the Blender-authored GLB while keeping live limbs, head scale, nozzle and parachute. */
+  private loadGlbModel(): void {
+    const loader = new GLTFLoader();
+    loader.load(
+      `${import.meta.env.BASE_URL}models/professor.glb`,
+      (gltf) => {
+        const pivotNames = new Set(['LegL', 'LegR', 'Torso', 'ArmL', 'ArmR', 'Head']);
+        const mappings: [string, THREE.Group][] = [
+          ['LegL', this.legL],
+          ['LegR', this.legR],
+          ['Torso', this.torso],
+          ['ArmL', this.armL],
+          ['ArmR', this.armR],
+          ['Head', this.head],
+        ];
+
+        for (const [glbName, target] of mappings) {
+          const src = gltf.scene.getObjectByName(glbName);
+          if (!src) continue;
+
+          for (const child of [...target.children]) {
+            if (child instanceof THREE.Mesh) target.remove(child);
+          }
+
+          for (const child of [...src.children]) {
+            if (pivotNames.has(child.name)) continue;
+            child.traverse((obj) => {
+              if (obj instanceof THREE.Mesh) {
+                obj.castShadow = true;
+                obj.receiveShadow = true;
+              }
+            });
+            target.add(child);
+          }
+        }
+        // the Blender model has its own built-in blaster: re-apply the Lab Gun choice so it hides
+        this.setGun(this.gunIndex);
+      },
+      undefined,
+      (err) => {
+        console.warn('Professor GLB fallback active:', err);
+      },
+    );
   }
 }

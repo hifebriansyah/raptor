@@ -124,7 +124,7 @@ export class NPCManager {
     } satisfies Record<string, Place>;
 
     // Grandma (the Professor's mum): rocking on her porch, by the front door
-    const grandma = new Humanoid({ skin: '#f2d0b5', shirt: '#b8a1e3', pants: '#6d597a', hair: '#e5e5e5', hairStyle: 'bun', dress: true, glasses: true, scale: 0.9 });
+    const grandma = new Humanoid({ skin: '#f2d0b5', shirt: '#b8a1e3', pants: '#6d597a', hair: '#e5e5e5', hairStyle: 'bun', dress: true, glasses: true, scale: 0.9, model: 'grandma' });
     const chair = new THREE.Group();
     chair.position.copy(L.grandmaPorch);
     chair.add(part(new THREE.BoxGeometry(0.8, 0.1, 0.7), '#8d5a4a', 0, 0.45, 0));
@@ -136,42 +136,18 @@ export class NPCManager {
     this.add('grandma', 'Grandma', grandma, [[0, places.porch]]).chair = chair;
 
     // The boys: school, park, arcade, Grandma's yard
-    this.add('leo', 'Leo', new Humanoid({ skin: '#e0ac7e', shirt: '#4cc9f0', pants: '#264653', hair: '#5a3825', hairStyle: 'cap', hat: '#ef476f', scale: 0.68 }), [[7, places.home], [8, places.school], [15, places.park], [17, places.arcade], [18.5, places.yard], [21, places.home]]);
-    this.add('max', 'Max', new Humanoid({ skin: '#e0ac7e', shirt: '#06d6a0', pants: '#3d405b', hair: '#5a3825', hairStyle: 'short', scale: 0.6 }), [[7, places.home], [8, places.school], [15, places.park], [17.5, places.yard], [21, places.home]]);
+    this.add('leo', 'Leo', new Humanoid({ skin: '#e0ac7e', shirt: '#4cc9f0', pants: '#264653', hair: '#5a3825', hairStyle: 'cap', hat: '#ef476f', scale: 0.68, model: 'leo' }), [[7, places.home], [8, places.school], [15, places.park], [17, places.arcade], [18.5, places.yard], [21, places.home]]);
+    this.add('max', 'Max', new Humanoid({ skin: '#e0ac7e', shirt: '#06d6a0', pants: '#3d405b', hair: '#5a3825', hairStyle: 'short', scale: 0.6, model: 'max' }), [[7, places.home], [8, places.school], [15, places.park], [17.5, places.yard], [21, places.home]]);
 
     // Gwen in her Godzilla costume
-    const gwen = new Humanoid({ skin: '#f7d7c4', shirt: '#4caf50', pants: '#4caf50', hair: '#7b3f00', hairStyle: 'long', scale: 1 });
-    const tail = this.dressAsKaiju(gwen);
-    this.add('gwen', 'Gwen', gwen, [[7, places.home], [9, places.park], [12, places.cafeFront], [14, places.downtown], [17, places.yard], [21, places.home]]).tail = tail;
+    const gwen = new Humanoid({ skin: '#f7d7c4', shirt: '#4caf50', pants: '#4caf50', hair: '#7b3f00', hairStyle: 'long', scale: 1, model: 'gwen' });
+    this.add('gwen', 'Gwen', gwen, [[7, places.home], [9, places.park], [12, places.cafeFront], [14, places.downtown], [17, places.yard], [21, places.home]]).tail = gwen.tail;
 
     this.add('sam', 'Sam', new Humanoid({ skin: '#c68642', shirt: '#ffffff', pants: '#264653', hair: '#111111', hairStyle: 'short', glasses: true }), [[7, places.cafeFront], [10, places.cafe], [15, places.cafeFront], [20, places.samHome]]);
     const bruno = new Humanoid({ skin: '#a86b3c', shirt: '#1d3557', pants: '#1d3557', hair: '#111111', hairStyle: 'cap', hat: '#1d3557', scale: 1.08 });
     bruno.head.add(part(new THREE.BoxGeometry(0.12, 0.08, 0.02), '#ffd166', 0, 0.33, 0.18, true)); // badge
     this.add('bruno', 'Chief Bruno', bruno, [[8, places.police], [12, places.cafeFront], [13, places.downtown], [16, places.police], [22, places.brunoHome]]);
     this.add('cora', 'Cora', new Humanoid({ skin: '#f2c9a0', shirt: '#9d0208', pants: '#2b2d42', hair: '#d4a373', hairStyle: 'cap', hat: '#2b2d42' }), [[6, places.station], [13, places.cafeFront], [14, places.station], [21, places.coraHome]]);
-  }
-
-  /** Turn a person into a Godzilla-costume wearer: green suit, dino hood with her face peeking out, spikes and a tail. */
-  private dressAsKaiju(h: Humanoid): THREE.Object3D {
-    const green = '#4caf50';
-    // hood: the dino head sits on top, jaw below the face
-    h.head.add(part(new THREE.BoxGeometry(0.46, 0.22, 0.5), green, 0, 0.36, 0.04));
-    h.head.add(part(new THREE.BoxGeometry(0.4, 0.1, 0.2), green, 0, 0.38, 0.34)); // snout
-    h.head.add(part(new THREE.BoxGeometry(0.42, 0.08, 0.3), green, 0, -0.1, 0.12)); // jaw
-    for (const sx of [-0.12, 0.12]) h.head.add(part(new THREE.BoxGeometry(0.07, 0.07, 0.05), '#ffd166', sx, 0.44, 0.38, true)); // eyes
-    for (let i = 0; i < 4; i++) h.head.add(part(new THREE.ConeGeometry(0.04, 0.08, 4).rotateX(Math.PI), '#ffffff', -0.15 + i * 0.1, 0.3, 0.42)); // teeth
-    // back spikes
-    const back = h.head.parent!;
-    for (let i = 0; i < 4; i++) back.add(part(new THREE.ConeGeometry(0.09 - i * 0.012, 0.22, 4), '#81c784', 0, 0.62 - i * 0.18, -0.2));
-    // tail
-    const tail = new THREE.Group();
-    tail.position.set(0, -0.05, -0.15);
-    for (let i = 0; i < 5; i++) {
-      const seg = part(new THREE.BoxGeometry(0.3 - i * 0.05, 0.26 - i * 0.04, 0.32), green, 0, -i * 0.06, -0.16 - i * 0.3);
-      tail.add(seg);
-    }
-    back.add(tail);
-    return tail;
   }
 
   private add(id: NpcId, name: string, body: Humanoid, schedule: [number, Place][]): Npc {

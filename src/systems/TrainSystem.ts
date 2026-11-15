@@ -4,6 +4,7 @@ import { buildCarModel, seatDriver } from '../entities/CarModels';
 import { part } from '../entities/CharacterEntity';
 import { Humanoid, randomLook } from '../entities/Humanoid';
 import { WORLD, type SpecialDoor } from '../game/WorldMap';
+import { Models } from '../game/Models';
 import type { PhysicsSystem } from './PhysicsSystem';
 
 /** Height of the rail tops on the viaduct. */
@@ -117,22 +118,35 @@ export class TrainSystem {
     for (let i = 0; i < CARS; i++) {
       const group = new THREE.Group();
       const c = colors[i];
-      // carriage: body, glass windows, roof, bogies
-      const m = buildCarModel('bus', c);
-      m.group.scale.set(1.15, 1, CAR_LEN / 10);
-      group.add(m.group);
-      // rail bogies instead of road wheels
-      for (const w of m.wheels) w.visible = false;
-      for (const bz of [-CAR_LEN / 2 + 1.6, CAR_LEN / 2 - 1.6]) {
-        group.add(part(new THREE.BoxGeometry(2.2, 0.6, 2.4), '#343a40', 0, 0.3, bz));
-        for (const wz of [-0.7, 0.7]) for (const wx of [-0.8, 0.8]) group.add(part(new THREE.CylinderGeometry(0.32, 0.32, 0.2, 10).rotateZ(Math.PI / 2), '#adb5bd', wx, 0.3, bz + wz));
+      // carriage: the Kenney monorail cars (CC0) when loaded, otherwise a hand-built one
+      const kname = i === 0 ? 'monorail_trainFront' : i === CARS - 1 ? 'monorail_trainEnd' : 'monorail_trainPassenger';
+      let m: ReturnType<typeof buildCarModel>;
+      if (Models.has(kname)) {
+        const km = Models.get(kname, { stretch: new THREE.Vector3(3.2, 3.1, CAR_LEN) });
+        // Kenney's cars face −z: turn the front car round (the end car's nose already points backwards)
+        if (i === 0) km.rotation.y = Math.PI;
+        group.add(km);
+        const seat = new THREE.Object3D();
+        seat.position.set(-0.6, 1.5, CAR_LEN / 2 - 1.5);
+        group.add(seat);
+        m = { group: km, wheels: [], driverSeat: seat, driver: null, beacons: [], hideRider: true };
+      } else {
+        m = buildCarModel('bus', c);
+        m.group.scale.set(1.15, 1, CAR_LEN / 10);
+        group.add(m.group);
+        // rail bogies instead of road wheels
+        for (const w of m.wheels) w.visible = false;
+        for (const bz of [-CAR_LEN / 2 + 1.6, CAR_LEN / 2 - 1.6]) {
+          group.add(part(new THREE.BoxGeometry(2.2, 0.6, 2.4), '#343a40', 0, 0.3, bz));
+          for (const wz of [-0.7, 0.7]) for (const wx of [-0.8, 0.8]) group.add(part(new THREE.CylinderGeometry(0.32, 0.32, 0.2, 10).rotateZ(Math.PI / 2), '#adb5bd', wx, 0.3, bz + wz));
+        }
+        group.add(part(new THREE.BoxGeometry(3.04, 0.25, CAR_LEN + 0.02), '#ffd166', 0, 1.35, 0)); // stripe
+        if (i === 0) {
+          group.add(part(new THREE.BoxGeometry(3, 1.2, 0.6), '#ffd166', 0, 1.2, CAR_LEN / 2 - 0.1)); // nose
+          group.add(part(new THREE.BoxGeometry(0.6, 0.3, 0.1), '#fff8d6', 0, 1.6, CAR_LEN / 2 + 0.22, true)); // lamp
+        }
+        for (let k = 0; k < 4; k++) seatDriverIf(m, k === 0 && i > 0);
       }
-      group.add(part(new THREE.BoxGeometry(3.04, 0.25, CAR_LEN + 0.02), '#ffd166', 0, 1.35, 0)); // stripe
-      if (i === 0) {
-        group.add(part(new THREE.BoxGeometry(3, 1.2, 0.6), '#ffd166', 0, 1.2, CAR_LEN / 2 - 0.1)); // nose
-        group.add(part(new THREE.BoxGeometry(0.6, 0.3, 0.1), '#fff8d6', 0, 1.6, CAR_LEN / 2 + 0.22, true)); // lamp
-      }
-      for (let k = 0; k < 4; k++) seatDriverIf(m, k === 0 && i > 0);
       this.scene.add(group);
       const body = this.physics.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
       this.physics.world.createCollider(RAPIER.ColliderDesc.cuboid(1.5, 1.5, CAR_LEN / 2), body);
@@ -147,6 +161,7 @@ export class TrainSystem {
     const h = new Humanoid(look);
     h.root.position.y = -0.9;
     h.sit();
+    h.root.visible = !Models.has('monorail_trainFront'); // closed Kenney cab
     cab.seat.add(h.root);
     this.conductorModel = h;
     this.head = this.stations[0].at + CARS * (CAR_LEN + GAP) * 0.5;

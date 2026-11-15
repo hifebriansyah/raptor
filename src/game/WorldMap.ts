@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import type { PhysicsSystem, RAPIER } from '../systems/PhysicsSystem';
 import { BOUNDS, LIGHTHOUSE_HILL, MAIN_ISLAND, PALM_ISLE, PARK_BASIN, SEABED_Y, WATER_Y, floorAt } from './Terrain';
 import { Uptown, buildTerrainMesh } from './Uptown';
+import { Models, StaticBatch, SUBURB_FRONT, TOWN_FRONT } from './Models';
 
 /** Map layout constants (metres). The town is a 9×9 road grid inside a coastal ring. */
 export const WORLD = {
@@ -133,6 +134,8 @@ export class WorldMap {
   /** Toy-brick studs on the rooftops (one instanced mesh). */
   private readonly studs: THREE.Matrix4[] = [];
   uptown!: Uptown;
+  /** Kenney buildings and trees, baked into a few meshes. */
+  readonly batch = new StaticBatch();
   /** Where the conductor waits for the train (by the south station). */
   readonly stationSpot = new THREE.Vector3(5, 0, WORLD.roadMax + 19);
   /** Trees to plant (Uptown adds its own). */
@@ -161,6 +164,7 @@ export class WorldMap {
     this.buildBoundary();
     this.flushMerged();
     this.flushStuds();
+    this.batch.flush(this.scene);
 
     const R = WORLD.roadMax;
     this.ringLoop.push(new THREE.Vector3(-R, 0, -R), new THREE.Vector3(R, 0, -R), new THREE.Vector3(R, 0, R), new THREE.Vector3(-R, 0, R));
@@ -826,8 +830,17 @@ export class WorldMap {
           const cx = bx + (ox * q) / 2 + (this.rand() - 0.5) * 2;
           const cz = bz + (oz * q) / 2 + (this.rand() - 0.5) * 2;
           const color = palette[Math.floor(this.rand() * palette.length)];
+          const facingSide: [number, number] = Math.abs(cx - bx) > Math.abs(cz - bz) ? [Math.sign(cx - bx), 0] : [0, Math.sign(cz - bz)];
+          // Kenney models when loaded: suburban houses in the outskirts, modular buildings downtown
+          const k = this.kenneyBuilding(downtown, floors, cx, cz, w, d, Math.atan2(facingSide[0], facingSide[1]));
+          if (k) {
+            const door = new THREE.Vector3(cx + facingSide[0] * (k.w / 2 + 0.3), 0, cz + facingSide[1] * (k.d / 2 + 0.3));
+            const kind = downtown ? (k.h > 24 ? 'tower' : k.h > 11 ? 'office' : 'shop') : 'house';
+            this.features.push({ kind: 'building', x: cx, z: cz, w: k.w, d: k.d, h: k.h, color: k.color });
+            this.doors.push({ pos: door, facing: Math.atan2(facingSide[0], facingSide[1]), building: { x: cx, z: cz, w: k.w, d: k.d, h: k.h }, kind, color: k.color });
+            continue;
+          }
           this.box(cx, h / 2, cz, w, h, d, color, { merge: true });
-          // roof cap + a rooftop box for silhouette
           this.box(cx, h + 0.15, cz, w + 0.4, 0.3, d + 0.4, '#e5e5e5', { collide: false, castShadow: false, merge: true });
           if (this.rand() < 0.6) {
             const rw = 2 + this.rand() * 3;
@@ -853,6 +866,37 @@ export class WorldMap {
         }
       }
     }
+  }
+
+  /**
+   * Place a Kenney building (CC0) on a lot, scaled to fit (uniformly, so windows keep their shape)
+   * and turned to face the road; returns its real footprint and height, or null if models are missing.
+   */
+  private kenneyBuilding(downtown: boolean, floors: number, cx: number, cz: number, w: number, d: number, facing: number): { w: number; d: number; h: number; color: string } | null {
+    const towers = ['building-sample-tower-a', 'building-sample-tower-b', 'building-sample-tower-c', 'building-sample-tower-d'];
+    const shops = ['building-sample-house-a', 'building-sample-house-b', 'building-sample-house-c'];
+    const houses = Array.from({ length: 21 }, (_, i) => `house_type${String(i + 1).padStart(2, '0')}`);
+    const pool = downtown ? (floors >= 3 ? towers : shops) : houses;
+    const name = pool[Math.floor(this.rand() * pool.length)];
+    if (!Models.has(name)) return null;
+    const size = Models.size(name);
+    const front = downtown ? TOWN_FRONT : SUBURB_FRONT;
+    const across = Math.abs(Math.sin(facing + front)) > 0.5; // model's z axis lies along world x
+    const fx = across ? size.z : size.x;
+    const fz = across ? size.x : size.z;
+    const s = Math.min(w / fx, d / fz, (downtown ? 42 : 12) / size.y);
+    const obj = Models.get(name);
+    obj.children[0].scale.setScalar(s);
+    obj.position.set(cx, 0, cz);
+    obj.rotation.y = facing + front;
+    // a few colour tints so downtown isn't all one beige
+    if (downtown) Models.tint(obj, ['#ffffff', '#cfe3ff', '#ffd6e0', '#d8f3dc', '#fff1c1'][Math.floor(this.rand() * 5)]);
+    this.batch.add(obj);
+    const W = fx * s;
+    const D = fz * s;
+    const H = size.y * s;
+    this.physics.addStaticBox(new THREE.Vector3(cx, H / 2, cz), new THREE.Vector3(W / 2, H / 2, D / 2));
+    return { w: W, d: D, h: H, color: downtown ? '#c9ced8' : '#f4a261' };
   }
 
   /** The police station: blue and white, POLICE sign, beacon lights, a patrol car out front. */
@@ -1028,26 +1072,36 @@ export class WorldMap {
   }
 
   private buildTrees(): void {
+    const kenney = Models.has('tree_large');
     const n = this.treeSpots.length;
-    const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.25, 0.35, 2.4, 6), this.mat('#8d5a3b'), n);
-    const crown = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1.9, 0), this.mat('#3fa34d'), n);
+    const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.25, 0.35, 2.4, 6), this.mat('#8d5a3b'), kenney ? 0 : n);
+    const crown = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1.9, 0), this.mat('#3fa34d'), kenney ? 0 : n);
     trunk.castShadow = crown.castShadow = true;
     const tmp = new THREE.Object3D();
     this.treeSpots.forEach((p, i) => {
       const s = 0.8 + this.rand() * 0.6;
       const base = floorAt(p.x, p.z);
-      tmp.position.set(p.x, base + 1.2 * s, p.z);
-      tmp.scale.setScalar(s);
-      tmp.rotation.set(0, this.rand() * Math.PI, 0);
-      tmp.updateMatrix();
-      trunk.setMatrixAt(i, tmp.matrix);
-      tmp.position.y = base + 3.4 * s;
-      tmp.updateMatrix();
-      crown.setMatrixAt(i, tmp.matrix);
+      if (kenney) {
+        // Kenney trees (CC0): big round ones and small cones
+        const t = Models.get(this.rand() < 0.65 ? 'tree_large' : 'tree_small', { height: 5.5 * s });
+        t.position.set(p.x, base, p.z);
+        t.rotation.y = this.rand() * Math.PI * 2;
+        this.batch.add(t);
+      } else {
+        tmp.position.set(p.x, base + 1.2 * s, p.z);
+        tmp.scale.setScalar(s);
+        tmp.rotation.set(0, this.rand() * Math.PI, 0);
+        tmp.updateMatrix();
+        trunk.setMatrixAt(i, tmp.matrix);
+        tmp.position.y = base + 3.4 * s;
+        tmp.updateMatrix();
+        crown.setMatrixAt(i, tmp.matrix);
+      }
       this.physics.addStaticCylinder(new THREE.Vector3(p.x, base + 1.5 * s, p.z), 1.5 * s, 0.4 * s);
     });
-    this.scene.add(trunk, crown);
+    if (!kenney) this.scene.add(trunk, crown);
   }
+
 }
 
 function setFade(mesh: THREE.Mesh, opacity: number): void {

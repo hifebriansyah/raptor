@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { InputManager } from '../game/InputManager';
 import type { PhysicsSystem } from '../systems/PhysicsSystem';
 import { WATER_Y } from '../game/Terrain';
@@ -718,5 +719,120 @@ export class MechaRaptor extends CharacterEntity {
       }
       this.legs.push({ thigh, shin, foot });
     }
+
+    this.loadGlbModel();
+  }
+
+  /** Replaces procedural placeholder meshes with the Blender-authored GLB while keeping live animation pivots. */
+  private loadGlbModel(): void {
+    const loader = new GLTFLoader();
+    loader.load(
+      `${import.meta.env.BASE_URL}models/mecha_raptor.glb`,
+      (gltf) => {
+        const pivotNames = new Set([
+          'Pelvis',
+          'Turret',
+          'TurretBarrel',
+          'Neck',
+          'Head',
+          'Jaw',
+          'WingL',
+          'WingR',
+          'WheelFL',
+          'WheelFR',
+          'WheelRL',
+          'WheelRR',
+          'WheelFL_Spin',
+          'WheelFR_Spin',
+          'WheelRL_Spin',
+          'WheelRR_Spin',
+          'Tail0',
+          'Tail1',
+          'Tail2',
+          'Tail3',
+          'Tail4',
+          'LegL_Thigh',
+          'LegL_Shin',
+          'LegL_Foot',
+          'LegR_Thigh',
+          'LegR_Shin',
+          'LegR_Foot',
+        ]);
+
+        const mappings: [string, THREE.Group][] = [
+          ['Pelvis', this.pelvis],
+          ['Turret', this.turret],
+          ['TurretBarrel', this.turretBarrel],
+          ['Neck', this.neck],
+          ['Head', this.head],
+          ['Jaw', this.jaw],
+          ['WingL', this.wings[0]],
+          ['WingR', this.wings[1]],
+          ['WheelFL_Spin', this.wheels[0].children[0] as THREE.Group],
+          ['WheelFR_Spin', this.wheels[1].children[0] as THREE.Group],
+          ['WheelRL_Spin', this.wheels[2].children[0] as THREE.Group],
+          ['WheelRR_Spin', this.wheels[3].children[0] as THREE.Group],
+          ['Tail0', this.tail[0]],
+          ['Tail1', this.tail[1]],
+          ['Tail2', this.tail[2]],
+          ['Tail3', this.tail[3]],
+          ['Tail4', this.tail[4]],
+          ['LegL_Thigh', this.legs[0].thigh],
+          ['LegL_Shin', this.legs[0].shin],
+          ['LegL_Foot', this.legs[0].foot],
+          ['LegR_Thigh', this.legs[1].thigh],
+          ['LegR_Shin', this.legs[1].shin],
+          ['LegR_Foot', this.legs[1].foot],
+        ];
+
+        const keepUnderPelvis = new Set<THREE.Object3D>([
+          this.turret,
+          this.neck,
+          this.hull,
+          this.saddle,
+          ...this.wings,
+          ...this.wheels,
+          ...this.tail,
+          this.legs[0].thigh,
+          this.legs[1].thigh,
+          ...this.jetFlames,
+          ...this.rearFlames,
+        ]);
+
+        for (const [glbName, target] of mappings) {
+          const src = gltf.scene.getObjectByName(glbName);
+          if (!src || !target) continue;
+
+          // Strip procedural fallback visual meshes (plus procedural static forearm groups on pelvis)
+          for (const child of [...target.children]) {
+            if (target === this.pelvis) {
+              if (!keepUnderPelvis.has(child)) target.remove(child);
+            } else if (child instanceof THREE.Mesh) {
+              target.remove(child);
+            }
+          }
+
+          // Move non-pivot visual children from the GLB node into the live Three.js pivot
+          for (const child of [...src.children]) {
+            if (pivotNames.has(child.name)) continue;
+            child.traverse((obj) => {
+              if (obj instanceof THREE.Mesh) {
+                obj.castShadow = true;
+                obj.receiveShadow = true;
+                const mat = obj.material;
+                if (!Array.isArray(mat) && mat instanceof THREE.Material && mat.name === 'EyeVisor') {
+                  obj.material = this.eyeMat;
+                }
+              }
+            });
+            target.add(child);
+          }
+        }
+      },
+      undefined,
+      (err) => {
+        console.warn('MechaRaptor GLB fallback active:', err);
+      },
+    );
   }
 }

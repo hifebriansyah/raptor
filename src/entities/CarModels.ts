@@ -1,6 +1,24 @@
 import * as THREE from 'three';
 import { part } from './CharacterEntity';
 import { Humanoid, randomLook } from './Humanoid';
+import { Models } from '../game/Models';
+
+/** Kenney Car Kit models for each kind (one picked at random); the city bus stays hand-built. */
+const KENNEY_CARS: Partial<Record<CarModel, string[]>> = {
+  sedan: ['sedan', 'suv', 'taxi', 'suv-luxury'],
+  sports: ['sedan-sports'],
+  roadster: ['hatchback-sports'],
+  racecar: ['race', 'race-future'],
+  firetruck: ['firetruck'],
+  police: ['police'],
+  van: ['van', 'delivery', 'ambulance', 'garbage-truck', 'truck'],
+};
+const KENNEY_BOATS: Record<BoatModel, string[]> = {
+  speedboat: ['boat-speed-a', 'boat-speed-c', 'boat-speed-e'],
+  fishing: ['boat-fishing-small'],
+  yacht: ['boat-sail-a'],
+  coastguard: ['boat-tug-a'],
+};
 
 export type CarModel = 'sedan' | 'sports' | 'roadster' | 'racecar' | 'bus' | 'firetruck' | 'police' | 'van';
 export type BoatModel = 'speedboat' | 'fishing' | 'yacht' | 'coastguard';
@@ -44,6 +62,8 @@ export interface VehicleModel {
   driver: Humanoid | null;
   /** Flashing lights (police / fire truck) to animate. */
   beacons: THREE.Mesh[];
+  /** Closed (Kenney) cabin: whoever sits inside isn't drawn. */
+  hideRider?: boolean;
 }
 
 function glass(w: number, h: number, d: number, x: number, y: number, z: number): THREE.Mesh {
@@ -105,6 +125,7 @@ function lights(g: THREE.Group, y: number, front: number, back: number, spread =
 /** Seat a random (or given) driver in the model. */
 export function seatDriver(m: VehicleModel, look = randomLook()): Humanoid {
   const h = new Humanoid({ ...look, scale: 1 });
+  h.root.visible = !m.hideRider;
   h.root.position.y = -0.9;
   h.sit();
   m.driverSeat.add(h.root);
@@ -118,7 +139,33 @@ export function removeDriver(m: VehicleModel): void {
   m.driver = null;
 }
 
+/** A Kenney car, scaled to the kind's length; wheels spin, police/fire get flashing beacons. */
+function kenneyCar(model: CarModel): VehicleModel | null {
+  const names = KENNEY_CARS[model];
+  if (!names) return null;
+  const name = names[Math.floor(Math.random() * names.length)];
+  if (!Models.has(name)) return null;
+  const len = CAR_SPECS[model].half[1] * 2;
+  const g = Models.get(name, { length: len });
+  const wheels = Models.nodes(g, 'wheel');
+  const size = Models.size(name).multiplyScalar(len / Models.size(name).z);
+  const seat = new THREE.Object3D();
+  seat.position.set(-0.35, size.y * 0.32, size.z * 0.05);
+  g.add(seat);
+  const beacons: THREE.Mesh[] = [];
+  if (model === 'police' || model === 'firetruck' || name === 'ambulance') {
+    for (const sx of [-0.3, 0.3]) {
+      const b = part(new THREE.BoxGeometry(0.45, 0.14, 0.25), sx < 0 ? '#ff3b3b' : '#4361ee', sx * size.x, size.y + 0.05, model === 'firetruck' ? size.z * 0.3 : 0, true);
+      beacons.push(b);
+      g.add(b);
+    }
+  }
+  return { group: g, wheels, driverSeat: seat, driver: null, beacons, hideRider: true };
+}
+
 export function buildCarModel(model: CarModel, color: string): VehicleModel {
+  const k = kenneyCar(model);
+  if (k) return k;
   const g = new THREE.Group();
   const wheels: THREE.Object3D[] = [];
   const beacons: THREE.Mesh[] = [];
@@ -234,6 +281,19 @@ export function flashBeacons(m: { beacons: THREE.Mesh[] }, time: number): void {
 }
 
 export function buildBoatModel(model: BoatModel, color: string): VehicleModel {
+  const names = KENNEY_BOATS[model];
+  const kname = names[Math.floor(Math.random() * names.length)];
+  if (Models.has(kname)) {
+    const len = 6 * (model === 'yacht' ? 1.6 : model === 'fishing' ? 1.25 : 1);
+    const g = Models.get(kname, { length: len });
+    // sit the hull a little into the water
+    g.children[0].position.y = -0.45;
+    const size = Models.size(kname).multiplyScalar(len / Models.size(kname).z);
+    const seat = new THREE.Object3D();
+    seat.position.set(0, size.y * 0.5 - 0.3, -len * 0.12);
+    g.add(seat);
+    return { group: g, wheels: [], driverSeat: seat, driver: null, beacons: [] };
+  }
   const g = new THREE.Group();
   const beacons: THREE.Mesh[] = [];
   const size = model === 'yacht' ? 1.6 : model === 'fishing' ? 1.25 : 1;
