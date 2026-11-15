@@ -39,7 +39,7 @@ export const CONTROL_ROWS: [string, string][] = [
 type Page = 'main' | 'options' | 'controls';
 
 /**
- * Main / pause menu. Opens on boot (title screen), with Tab / P / Start / the HUD menu button, and
+ * Main / pause menu. The game starts straight away; this opens with Tab / P / Start / the HUD menu button, and
  * whenever the mouse is released (Esc). The game is paused while it is open.
  */
 export class Menu {

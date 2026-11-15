@@ -152,7 +152,7 @@ export const gameStore = createStore<GameState>(() => ({
   pads: [0],
   jailed: 0,
   clock: 9,
-  menuOpen: true,
+  menuOpen: false, // straight into the game; Tab, P or Esc opens the menu
   settings: { crowd: 'medium', quality: 'standard' },
 }));
 

@@ -123,7 +123,7 @@ Earlier phases 1–4 (sandbox MVP; flight, race and water gun; fires, Grandma, m
 - [x] **More events:** burning buildings, runaway train, meteor crashes, **Moon/Space Base**, optional giant monster encounters for Giant Mode
 
 ### Phases 5–10 decisions (as built)
-- **Menu keys:** `Tab` or `P`, gamepad Start, the touch Menu button, the HUD menu icon. Releasing the mouse (Esc, switching windows) also opens it. The game pauses behind it with a slow camera flyover. It doubles as the title screen (Play/Continue, New Game asks twice).
+- **Menu keys:** `Tab` or `P`, gamepad Start, the touch Menu button, the HUD menu icon. Releasing the mouse (Esc, switching windows) also opens it. The game pauses behind it with a slow camera flyover. The game starts straight into play (no title screen); New Game in the menu asks twice.
 - **Shading:** four presets instead of three: Flat (no shadows), Toon (3-step cel ramp, applied by swapping materials), Standard (default), High (4K shadow map, wider shadow area, bloom).
 - **Crowds** change live: pedestrians are added or removed out of sight; cars are topped up or dropped out of sight; AI boats are added or removed.
 - **Install:** PWA manifest, network-first service worker, `beforeinstallprompt` button; iOS gets a "Share → Add to Home Screen" hint.

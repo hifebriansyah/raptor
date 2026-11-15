@@ -64,7 +64,7 @@ Gamepad works: left stick moves, right stick looks, A jumps, X uses, B punches, 
 ## Features
 
 **Menu, camera and options**
-- Title screen and pause menu with a slow flyover of the town:
+- The game starts straight into play. The pause menu (Tab, P, Esc) shows a slow flyover of the town:
   - **Continue / New Game**: New Game asks twice before wiping progress.
   - **Options**: **Crowds** (Low / Medium / High / Packed), which sets how many pedestrians, cars and boats there are, live. **Shading** (Flat, Toon cel-shading, Standard, High with sharper shadows and glow).
   - **Cheats & Extras** and a **Controls** page.

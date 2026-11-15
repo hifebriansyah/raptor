@@ -13,6 +13,9 @@ const CHUTE_GLIDE = 7;
 const SKYDIVE_GLIDE = 13;
 const SKYDIVE_FALL = 50;
 
+/** Kenney units → metres for the Lab Gun blasters (one scale for all of them). */
+const BLASTER_SCALE = 0.85;
+
 /** Water deeper than this and the Professor swims. */
 const SWIM_DEPTH = 1.3;
 
@@ -51,11 +54,14 @@ export class Professor extends CharacterEntity {
     for (const c of this.armR.children) if (c.name.startsWith('Blaster')) c.visible = !kenney;
     const name = ['blasterA', 'blasterB', 'blasterC', 'blasterD', 'blasterE'][i] ?? 'blasterA';
     if (Models.has(name)) {
-      const gun = Models.get(name, { length: 0.55 });
+      // one shared scale for every blaster, so they keep the kit's relative sizes (pistols small,
+      // the megaphone rifle long) instead of each being stretched to the same length
+      const len = Models.size(name).z * BLASTER_SCALE;
+      const gun = Models.get(name, { length: len });
       // Kenney blasters point down +z with the grip below: tip the barrel along the arm (−y), grip
-      // towards the arm's −z, so it aims where the arm points; slide it forward so the grip is in the hand
+      // towards the arm's −z, so it aims where the arm points; the grip (≈30 % from the back) sits in the hand
       gun.rotation.set(Math.PI / 2, 0, 0);
-      gun.position.set(0, -0.78, 0.04);
+      gun.position.set(0, -0.6 - 0.2 * len, 0.04);
       this.gunHolder.add(gun);
     } else {
       this.gunHolder.add(part(new THREE.BoxGeometry(0.12, 0.14, 0.34), '#ff9f1c', 0, -0.6, 0.12));
