@@ -170,7 +170,7 @@ export class WorldMap {
       lab: { ...LAB },
       labBench: new THREE.Vector3(LAB.x + 9, 0, LAB.z + 3),
       grandma: { ...GRANDMA },
-      grandmaPorch: new THREE.Vector3(GRANDMA.x + 3.5, 0.24, GRANDMA.z + HOUSE.hz + 1.4),
+      grandmaPorch: new THREE.Vector3(GRANDMA.x + 4.2, 0.24, GRANDMA.z + HOUSE.hz + 1.4),
       grandmaYard: { x: GRANDMA.x, z: GRANDMA.z + 15, hx: 18, hz: 6 },
       atticSpot: new THREE.Vector3(GRANDMA.x + 2, HOUSE.atticFloor + 0.02, GRANDMA.z - 1),
       professorSpawn: new THREE.Vector3(LAB.x + 7, 1.2, LAB.z + 20),
@@ -657,6 +657,10 @@ export class WorldMap {
     this.houseBox(-hx + leftW / 2, gy, hz, leftW, groundH, t, wallC, 'shell');
     this.houseBox(hx - rightW / 2, gy, hz, rightW, groundH, t, wallC, 'shell');
     this.houseBox(doorX, doorH + (groundH - doorH) / 2, hz, doorW, groundH - doorH, t, wallC, 'shell'); // lintel
+    // Front door (closed: press E on the porch to go inside, see InteriorSystem 'grandma')
+    this.box(gx + doorX, doorH / 2, gz + hz + 0.02, doorW, doorH, t + 0.06, '#8d5a4a');
+    this.box(gx + doorX + 0.6, 1.2, gz + hz + 0.22, 0.12, 0.12, 0.12, '#ffd166', { collide: false, castShadow: false });
+    this.specialDoors.push({ id: 'grandma', pos: new THREE.Vector3(gx + doorX, 0.24, gz + hz + 1.0), facing: 0, label: 'Grandma’s house' });
 
     // Stairs along the west wall, rising northwards from the door side up to the attic floor.
     const steps = 11;
@@ -692,6 +696,8 @@ export class WorldMap {
     this.houseBox(hx, atticFloor + sill / 2, 0, t, sill, winW, wallC, 'shell');
     const headH = atticH - sill - winH;
     this.houseBox(hx, atticFloor + atticH - headH / 2, 0, t, headH, winW, wallC, 'shell');
+    // the old attic window is glazed now (the attic is inside the house, on the 3rd floor)
+    this.box(gx + hx, atticFloor + sill + winH / 2, gz, 0.08, winH, winW, '#9ad7ff', { material: new THREE.MeshLambertMaterial({ color: '#9ad7ff', transparent: true, opacity: 0.5 }) });
 
     // Gable roof, ridge running east–west.
     const eaves = atticFloor + atticH;

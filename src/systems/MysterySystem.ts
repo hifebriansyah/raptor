@@ -351,7 +351,7 @@ export class MysterySystem {
       };
     }
     return {
-      lines: [id === 'leo' ? { speaker: 'Leo', text: 'I heard metallic crunching upstairs! CRUNCH CRUNCH!' } : { speaker: 'Max', text: 'Did you check the attic, Dad? The stairs are inside, by the door.' }],
+      lines: [id === 'leo' ? { speaker: 'Leo', text: 'I heard metallic crunching upstairs! CRUNCH CRUNCH!' } : { speaker: 'Max', text: 'Did you check the attic, Dad? Go in the front door and up, up, UP to the top floor!' }],
       after: () => this.atticHint(),
     };
   }
@@ -360,7 +360,7 @@ export class MysterySystem {
     const c = this.case;
     if (!c || c.atticHint) return;
     c.atticHint = true;
-    setObjective({ id: 'mystery', icon: 'cookie', text: 'Check Grandma’s attic (stairs inside, by the front door)' });
+    setObjective({ id: 'mystery', icon: 'cookie', text: 'Check Grandma’s attic: E at her front door, then up to the 3rd floor' });
   }
 
   private showPremonition(): void {
@@ -388,6 +388,8 @@ export class MysterySystem {
       g.water.targets.delete(t.target);
     }
     g.mount();
+    // found in Grandma's attic: ride straight out into her front yard
+    if (g.interiors.inside) g.leaveInterior(false);
     if (c.kind === 'stolen') {
       addPoints(THEFT_REWARD);
       showToast(`Raptor rescued! +${THEFT_REWARD} Lab Points`);

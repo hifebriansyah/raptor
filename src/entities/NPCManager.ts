@@ -123,7 +123,7 @@ export class NPCManager {
       coraHome: { name: 'home', pos: near(-30, 150, 'house'), inside: true },
     } satisfies Record<string, Place>;
 
-    // Grandma (the Professor's mum): kitchen, porch, the café, her garden
+    // Grandma (the Professor's mum): rocking on her porch, by the front door
     const grandma = new Humanoid({ skin: '#f2d0b5', shirt: '#b8a1e3', pants: '#6d597a', hair: '#e5e5e5', hairStyle: 'bun', dress: true, glasses: true, scale: 0.9 });
     const chair = new THREE.Group();
     chair.position.copy(L.grandmaPorch);
@@ -132,7 +132,8 @@ export class NPCManager {
     chair.add(part(new THREE.BoxGeometry(0.9, 0.06, 0.06), '#5c3b30', 0, 0.02, 0.3));
     chair.add(part(new THREE.BoxGeometry(0.9, 0.06, 0.06), '#5c3b30', 0, 0.02, -0.3));
     scene.add(chair);
-    this.add('grandma', 'Grandma', grandma, [[6, places.kitchen], [9, places.porch], [12, places.cafeFront], [14, places.garden], [17, places.porch], [21, places.kitchen]]).chair = chair;
+    // she's always on the porch by her front door (easy to find when the Raptor goes missing)
+    this.add('grandma', 'Grandma', grandma, [[0, places.porch]]).chair = chair;
 
     // The boys: school, park, arcade, Grandma's yard
     this.add('leo', 'Leo', new Humanoid({ skin: '#e0ac7e', shirt: '#4cc9f0', pants: '#264653', hair: '#5a3825', hairStyle: 'cap', hat: '#ef476f', scale: 0.68 }), [[7, places.home], [8, places.school], [15, places.park], [17, places.arcade], [18.5, places.yard], [21, places.home]]);

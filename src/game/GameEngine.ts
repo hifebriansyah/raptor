@@ -6,7 +6,7 @@ import { Professor } from '../entities/Professor';
 import { CHEAT_COST, CROWD_COUNTS, addPoints, brickCount, gameStore, showToast, type CheatId, type ControlMode } from '../state/gameStore';
 import { AudioSystem } from '../systems/AudioSystem';
 import { FlingSystem } from '../systems/FlingSystem';
-import { InteriorSystem, type InteriorDef, type InteriorKind } from '../systems/InteriorSystem';
+import { GRANDMA_ATTIC_SPOT, InteriorSystem, type InteriorDef, type InteriorKind } from '../systems/InteriorSystem';
 import { MiniGames } from '../systems/MiniGames';
 import { TeleportSystem } from '../systems/TeleportSystem';
 import { GadgetSystem } from '../systems/GadgetSystem';
@@ -1286,7 +1286,8 @@ export class GameEngine {
     if (!this.onFoot || this.interiors.inside || this.iris.busy) return null;
     const f = this.professor.feet;
     const near = (p: THREE.Vector3, r: number) => Math.hypot(p.x - f.x, p.z - f.z) < r && Math.abs(p.y - f.y) < 2;
-    for (const d of this.world.specialDoors) if (near(d.pos, 2.4)) return { prompt: `Enter ${d.label}`, priority: 1.2, run: () => this.enterSpecial(d) };
+    // (Grandma's door is right beside her rocking chair, so it needs you closer)
+    for (const d of this.world.specialDoors) if (near(d.pos, d.id === 'grandma' ? 1.5 : 2.4)) return { prompt: `Enter ${d.label}`, priority: 1.2, run: () => this.enterSpecial(d) };
     let best: BuildingDoor | null = null;
     for (const d of this.world.doors) if (near(d.pos, 1.9) && (!best || d.pos.distanceTo(f) < best.pos.distanceTo(f))) best = d;
     if (!best) return null;
@@ -1315,7 +1316,7 @@ export class GameEngine {
 
   private enterSpecial(d: SpecialDoor): void {
     const out = new THREE.Vector3(Math.sin(d.facing), 0, Math.cos(d.facing));
-    const kind: Record<SpecialDoor['id'], InteriorKind> = { lab: 'lab', police: 'police', lighthouse: 'lighthouse', observatory: 'observatory', grandma: 'house', shack: 'shack', station: 'station', moonbase: 'moonbase' };
+    const kind: Record<SpecialDoor['id'], InteriorKind> = { lab: 'lab', police: 'police', lighthouse: 'lighthouse', observatory: 'observatory', grandma: 'grandma', shack: 'shack', station: 'station', moonbase: 'moonbase' };
     const title: Record<SpecialDoor['id'], string> = { lab: 'The Lab · Teleport Hub', police: 'Police Station', lighthouse: 'The Lighthouse', observatory: 'The Observatory', grandma: 'Grandma’s house', shack: 'The Pirate’s Treasure Room', station: 'Train Station', moonbase: 'Moon Base' };
     let roof: THREE.Vector3 | undefined;
     if (d.id === 'lighthouse') roof = new THREE.Vector3(d.pos.x + 3.2, d.pos.y + 22.1, d.pos.z);
@@ -1331,8 +1332,11 @@ export class GameEngine {
       this.rig.yaw = facing + Math.PI;
       this.rig.pitch = 0.3;
       const st = gameStore.getState().raptorStatus;
+      // cookie run: the Raptor is snoozing in Grandma's attic (3rd floor)
+      if (def.kind === 'grandma' && st === 'attic') {
+        this.raptor.teleport(GRANDMA_ATTIC_SPOT.clone().setY(GRANDMA_ATTIC_SPOT.y + this.raptor.footOffset), Math.PI / 2);
+      } else if (this.interiors.roomy && def.kind !== 'grandma' && this.following && st !== 'stolen' && st !== 'attic') {
       // the Lab hangar is big enough for the Raptor to trot in after you
-      if (this.interiors.roomy && this.following && st !== 'stolen' && st !== 'attic') {
         this.raptor.summonTarget = null;
         this.raptor.teleport(spawn.clone().add(new THREE.Vector3(-4, this.raptor.footOffset, -3)), facing);
       }
@@ -1341,27 +1345,46 @@ export class GameEngine {
   }
 
   /** Back outside by the door (or up on the roof). */
-  private leaveInterior(toRoof = false): void {
+  /** Back outside by the door (or up on the roof). Riding the Raptor, you come out together into the yard. */
+  leaveInterior(toRoof = false): void {
     const o = this.outside;
     if (!o) return;
     void this.iris.play(() => {
       const raptorInside = this.raptor.pos.y < -300;
+      const riding = this.riding;
       this.interiors.leave();
       this.outside = null;
-      const to = toRoof && o.def.roof ? o.def.roof : o.pos;
-      this.professor.teleport(to.clone().setY(to.y + this.professor.footOffset), o.facing);
-      this.rig.yaw = o.facing + Math.PI;
-      if (raptorInside) {
-        const side = new THREE.Vector3(Math.cos(o.facing), 0, -Math.sin(o.facing)).multiplyScalar(4);
-        this.raptor.teleport(o.pos.clone().add(side).setY(o.pos.y + this.raptor.footOffset), o.facing);
+      const out = new THREE.Vector3(Math.sin(o.facing), 0, Math.cos(o.facing));
+      if (riding) {
+        const yard = o.pos.clone().addScaledVector(out, 5);
+        this.raptor.teleport(yard.setY(floorAt(yard.x, yard.z) + this.raptor.footOffset), o.facing);
+      } else {
+        const to = toRoof && o.def.roof ? o.def.roof : o.pos;
+        this.professor.teleport(to.clone().setY(to.y + this.professor.footOffset), o.facing);
+        if (raptorInside && gameStore.getState().raptorStatus === 'attic') {
+          // still asleep in the attic: it stays hidden in Grandma's house
+          const spot = this.world.landmarks.atticSpot;
+          this.raptor.teleport(spot.clone().setY(spot.y + this.raptor.footOffset), Math.PI / 2);
+        } else if (raptorInside) {
+          const side = new THREE.Vector3(Math.cos(o.facing), 0, -Math.sin(o.facing)).multiplyScalar(4);
+          this.raptor.teleport(o.pos.clone().add(side).setY(o.pos.y + this.raptor.footOffset), o.facing);
+        }
       }
+      this.rig.yaw = o.facing + Math.PI;
       if (toRoof) showToast('Up on the roof! Jump off and skydive (Space cuts the parachute).');
     }, toRoof ? 'Up we go…' : undefined);
   }
 
   /** E prompts for things to do indoors. */
   private interiorInteraction(): Interaction | null {
-    if (!this.interiors.inside || this.iris.busy || !this.onFoot) return null;
+    if (!this.interiors.inside || this.iris.busy) return null;
+    if (this.riding) {
+      // on the Raptor indoors (the Lab hangar, Grandma's attic): you can only ride out
+      const a = this.interiors.actionNear(this.raptor.feet);
+      if (a?.id === 'exit') return { prompt: 'Ride out', priority: 1, run: () => this.leaveInterior(false) };
+      return null;
+    }
+    if (!this.onFoot) return null;
     const f = this.professor.feet;
     const person = this.interiors.personNear(f);
     const a = this.interiors.actionNear(f);
@@ -1435,6 +1458,15 @@ export class GameEngine {
       return showToast('Pirate treasure! +50 Lab Points');
     }
     if (id === 'progress') return this.showProgress();
+    if (id === 'grandmaJar') {
+      const st = gameStore.getState();
+      if (st.raptorStatus === 'attic') return showToast('Empty! Just crumbs… and a trail of them leading up the stairs.');
+      if (st.treatStock < 8) {
+        gameStore.setState({ treatStock: 8 });
+        return showToast('You help yourself to cookies (8 carried). Grandma won’t mind. Probably.');
+      }
+      return showToast('Mmm, still warm. You already have plenty of cookies.');
+    }
     if (id === 'moonlog') {
       this.dialogue.start([
         { speaker: 'Professor', text: '“Day 12: still no cheese found on the Moon. The Professor promised there would be cheese.”' },

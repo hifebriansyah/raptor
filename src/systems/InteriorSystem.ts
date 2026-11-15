@@ -5,7 +5,7 @@ import { Humanoid, randomLook, type HumanoidLook } from '../entities/Humanoid';
 import { INTERIOR_Y } from '../game/Terrain';
 import type { PhysicsSystem } from './PhysicsSystem';
 
-export type InteriorKind = 'house' | 'shop' | 'cafe' | 'office' | 'tower' | 'lab' | 'police' | 'lighthouse' | 'observatory' | 'shack' | 'station' | 'moonbase';
+export type InteriorKind = 'grandma' | 'house' | 'shop' | 'cafe' | 'office' | 'tower' | 'lab' | 'police' | 'lighthouse' | 'observatory' | 'shack' | 'station' | 'moonbase';
 
 export interface InteriorDef {
   kind: InteriorKind;
@@ -50,6 +50,13 @@ interface Current {
 /** Interior space origin (all rooms are built around here, under the town). */
 const O = new THREE.Vector3(0, INTERIOR_Y, 0);
 
+/** Grandma's house: three floors (ground, bedrooms, attic). Heights of each floor's surface. */
+const G_FLOORS = [0, 3.8, 7.6];
+const G_W = 16;
+const G_D = 13;
+/** Where the Raptor curls up in the attic during a cookie run (feet, world space). */
+export const GRANDMA_ATTIC_SPOT = new THREE.Vector3(2, INTERIOR_Y + G_FLOORS[2], -2.5);
+
 const WALL_COLORS = ['#fff1e6', '#e2ece9', '#fde2e4', '#dfe7fd', '#fff8d6', '#e9f5db'];
 const FLOOR_COLORS = ['#c9a27e', '#b08968', '#d6ccc2', '#a3b18a', '#bfc0c0'];
 
@@ -88,6 +95,9 @@ export class InteriorSystem {
     const cur: Current = { def, group, bodies: [], actions: [], people: [], spawn: O.clone(), spawnFacing: Math.PI, roomy: false, animated: [] };
     this.current = cur;
     switch (def.kind) {
+      case 'grandma':
+        this.buildGrandma(cur);
+        break;
       case 'lab':
         this.buildLab(cur);
         break;
@@ -378,6 +388,100 @@ export class InteriorSystem {
   }
 
   // ───────────────────────────────────────────── landmarks
+
+  /**
+   * Grandma's house, three floors: kitchen and sitting room on the ground floor, bedrooms on the
+   * 1st floor, and the dusty cookie attic on the top (3rd) floor. Stairs go up the west wall, then
+   * back along the east wall.
+   */
+  private buildGrandma(c: Current): void {
+    const w = G_W;
+    const d = G_D;
+    const H = G_FLOORS[2] + 5.4; // the attic is tall enough for the Raptor
+    const wall = '#fde2e4';
+    this.room(c, w, d, H, wall, '#c9a27e');
+    // not "roomy": the Raptor can't follow you in (it only turns up in the attic on a cookie run)
+    const stairW = 1.8;
+    const steps = 11;
+    const run = 0.65;
+    const flight = (x: number, fromZ: number, dir: number, y0: number, y1: number) => {
+      const rise = (y1 - y0) / steps;
+      for (let i = 0; i < steps; i++) {
+        const top = y0 + (i + 1) * rise;
+        this.box(c, x, y0 + (top - y0) / 2, fromZ + dir * (i + 0.5) * run, stairW, top - y0, run, '#a47148');
+      }
+      return fromZ + dir * steps * run;
+    };
+    // flight 1: west wall, ground → 1st floor, going north (−z); flight 2: east wall, 1st → attic, going south
+    const sx1 = -w / 2 + stairW / 2;
+    const top1 = flight(sx1, 3.2, -1, G_FLOORS[0], G_FLOORS[1]);
+    const sx2 = w / 2 - stairW / 2;
+    const top2 = flight(sx2, top1, 1, G_FLOORS[1], G_FLOORS[2]);
+    // floor slabs with stairwell holes (solid: you stand on them)
+    const slab = (y: number, holeX: number, z0: number, z1: number, color: string) => {
+      const t = 0.25;
+      const hx0 = holeX - stairW / 2;
+      const hx1 = holeX + stairW / 2;
+      // the part beside the hole
+      const left = hx0 + w / 2;
+      const right = w / 2 - hx1;
+      if (left > 0.01) this.box(c, -w / 2 + left / 2, y - t / 2, 0, left, t, d, color);
+      if (right > 0.01) this.box(c, w / 2 - right / 2, y - t / 2, 0, right, t, d, color);
+      // in front of / behind the hole
+      const front = d / 2 - z1;
+      const back = z0 + d / 2;
+      if (front > 0.01) this.box(c, holeX, y - t / 2, z1 + front / 2, stairW, t, front, color);
+      if (back > 0.01) this.box(c, holeX, y - t / 2, -d / 2 + back / 2, stairW, t, back, color);
+    };
+    slab(G_FLOORS[1], sx1, top1, 3.2, '#d9b38c');
+    slab(G_FLOORS[2], sx2, top1, top2, '#c8a27a');
+    // banisters along the stairwells
+    for (const [x, y, z0, z1] of [[sx1 + stairW / 2 + 0.05, G_FLOORS[1], top1, 3.2], [sx2 - stairW / 2 - 0.05, G_FLOORS[2], top1, top2]]) {
+      this.box(c, x, y + 0.5, (z0 + z1) / 2, 0.08, 1, Math.abs(z1 - z0), '#6d4c41');
+    }
+    // ground floor: kitchen with an oven and the famous cookie jar, sitting room with a rug and armchair
+    this.box(c, 3, 0.45, -d / 2 + 0.8, 6, 0.9, 1.2, '#dee2e6');
+    this.box(c, 1.2, 0.5, -d / 2 + 0.8, 1, 1, 1.25, '#495057'); // oven
+    this.box(c, 1.2, 0.55, -d / 2 + 1.44, 0.7, 0.4, 0.04, '#ff9f1c', false, { emissive: true });
+    const jar = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 0.5, 12), this.mat('#cdeffd', { transparent: 0.6 }));
+    jar.position.set(4.5, 1.15, -d / 2 + 0.8);
+    c.group.add(jar);
+    this.table(c, 3, -2, 1.6, 1);
+    this.chair(c, 2.1, -2, Math.PI / 2, '#b8a1e3');
+    this.chair(c, 3.9, -2, -Math.PI / 2, '#b8a1e3');
+    this.box(c, 2.5, 0.02, 2.5, 3.6, 0.03, 2.6, '#ff8fab', false); // rug
+    this.sofa(c, 2.5, 4.4, Math.PI, '#b5838d');
+    this.plant(c, w / 2 - 2.6, d / 2 - 0.8);
+    c.actions.push({ pos: this.at(4.5, 0, -d / 2 + 2), radius: 1.6, prompt: 'Peek in the cookie jar', id: 'grandmaJar' });
+    // 1st floor: two bedrooms (beds, a wardrobe, the boys' bunk bed)
+    const y1 = G_FLOORS[1];
+    this.box(c, -2, y1 + 0.35, -d / 2 + 1.6, 2.2, 0.7, 3, '#ffffff');
+    this.box(c, -2, y1 + 0.75, -d / 2 + 0.5, 2, 0.25, 0.5, '#ffafcc', false);
+    this.box(c, 2.5, y1 + 1.1, -d / 2 + 0.4, 2, 2.2, 0.7, '#8d6e63'); // wardrobe
+    this.box(c, -1, y1 + 0.35, 3.5, 1.2, 0.7, 2.4, '#4cc9f0'); // bunk (bottom)
+    this.box(c, -1, y1 + 1.6, 3.5, 1.2, 0.2, 2.4, '#06d6a0', false); // bunk (top)
+    for (const [x, z] of [[-1.55, 2.35], [-0.45, 2.35], [-1.55, 4.65], [-0.45, 4.65]]) this.box(c, x, y1 + 0.85, z, 0.1, 1.7, 0.1, '#a47148', false);
+    this.box(c, 3, y1 + 1.4, d / 2 - 0.2, 2, 1.2, 0.05, '#9ad7ff', false); // window
+    // attic: boxes, an old trunk, dusty rafters, cookie crumbs everywhere, a round window
+    const y2 = G_FLOORS[2];
+    for (const [x, z, s2] of [[-5, -4.5, 1.2], [-3.8, -4.8, 0.9], [-5.2, -3.1, 0.8], [5.5, -5, 1], [-5, 4.5, 1.1]]) this.box(c, x, y2 + s2 / 2, z, s2, s2, s2, '#d4a373');
+    this.box(c, -2, y2 + 0.4, 4.6, 1.8, 0.8, 1, '#6d4c41'); // trunk
+    for (let x = -6; x <= 6; x += 3) this.box(c, x, H - 0.3, 0, 0.3, 0.3, d, '#8d6e63', false); // rafters
+    const win = new THREE.Mesh(new THREE.CircleGeometry(0.9, 16), this.mat('#fff3b0', { emissive: true }));
+    win.position.set(0, y2 + 3, -d / 2 + 0.05);
+    c.group.add(win);
+    for (let i = 0; i < 30; i++) this.box(c, (this.rand() - 0.5) * 8, y2 + 0.02, (this.rand() - 0.5) * 8, 0.12, 0.03, 0.12, '#c98b4a', false);
+    const attic = new THREE.PointLight('#ffe8b0', 1.1, 18, 1.3);
+    attic.position.set(0, y2 + 3.5, 0);
+    c.group.add(attic);
+    const bedroom = new THREE.PointLight('#fff4e0', 0.9, 16, 1.3);
+    bedroom.position.set(0, y1 + 2.8, 0);
+    c.group.add(bedroom);
+    // floor-numbers on the stair walls
+    for (const [x, y, z] of [[-w / 2 + 0.25, G_FLOORS[1] + 2, top1 - 0.5], [w / 2 - 0.25, G_FLOORS[2] + 2, top2 + 0.5]]) {
+      this.box(c, x, y, z, 0.05, 0.6, 0.6, '#ffd166', false, { emissive: true });
+    }
+  }
 
   /** The Lab: a hangar (big enough for the Raptor) with a workbench, and the Teleport Hub wing. */
   private buildLab(c: Current): void {

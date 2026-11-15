@@ -106,7 +106,7 @@ Gamepad works: left stick moves, right stick looks, A jumps, X uses, B punches, 
   - **Boats**: speedboats, fishing boats, yachts and coastguard boats. Take over an AI boat and the skipper dives overboard.
 
 **Family and townsfolk** (daily routines on the clock, 2D portraits in conversations)
-- **Grandma**, the Professor's mother: kitchen, porch, café, garden. She gives premonitions when the Raptor goes missing.
+- **Grandma**, the Professor's mother: always rocking on her porch by the front door, so she's easy to find. She gives premonitions when the Raptor goes missing and tops up your cookies.
 - His sons **Leo (11)** and **Max (9)**: school, park, arcade, Grandma's yard.
   - Leo plays **tag**: catch him in 30 s.
   - Max hides **6 stars**: find them in 75 s.
@@ -124,6 +124,7 @@ Gamepad works: left stick moves, right stick looks, A jumps, X uses, B punches, 
 - **Every building can be entered** (E at the door): an iris wipe, then a room built on the fly.
   - Seeded interiors: houses (nap until evening or morning), shops (cookies), Sam's café, offices and towers (lift to the **roof**, then jump off and skydive).
   - Handcrafted interiors:
+    - **Grandma's house** (E at her front door), on three floors: kitchen and sitting room (the cookie jar refills your cookies), the bedrooms on the 1st floor, and the dusty **attic on the 3rd floor**. On a cookie run that's where the Raptor is snoozing; waking it rides you both out into her yard.
     - **The Lab**: a hangar the Raptor can follow you into, the upgrade bench, the **Teleport Hub** with 8 portals, and a **progress wall** showing your 100 %.
     - **Police Station**: holding cells showing the thugs you've jailed.
     - **Lighthouse**: climb to the lamp gallery.
@@ -156,7 +157,7 @@ Gamepad works: left stick moves, right stick looks, A jumps, X uses, B punches, 
   - **Meteor crash**: grab the glowing space rock from the crater.
   - **Runaway train**: land on the front car, swing into the cab, pull the brake.
   - **Rogue Mech**: a giant robot stomping into town; beat it in Giant Mode.
-- Still here from earlier phases: **fires**, **rival races**, the **missing-Raptor mystery** (theft or cookie run), Lab upgrades.
+- Still here from earlier phases: **fires**, **rival races**, the **missing-Raptor mystery** (theft, or a cookie run up to Grandma's 3rd-floor attic), Lab upgrades.
 - **Saved** in the browser: points, upgrades, options, cookies, pads, jailed thugs, bricks, bolts, cheats and Super Builds.
 
 ## Speeds
