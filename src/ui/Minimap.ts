@@ -1,4 +1,4 @@
-import { BOUNDS, MAIN_ISLAND, PALM_ISLE } from '../game/Terrain';
+import { BOUNDS, MAIN_ISLAND, OBSERVATORY, PALM_ISLE, UPTOWN } from '../game/Terrain';
 import type { MapFeature } from '../game/WorldMap';
 
 const PX_PER_M = 2; // resolution of the pre-rendered base map
@@ -185,6 +185,22 @@ function renderBase(features: readonly MapFeature[]): HTMLCanvasElement {
   g.fillRect(-L, -L, L * 2, L * 2);
   g.fillStyle = '#8ccf6a';
   g.fillRect(-L + 12, -L + 12, L * 2 - 24, L * 2 - 24);
+  // Uptown with Observatory Hill (darker rings = higher)
+  g.fillStyle = '#f2dca0';
+  g.fillRect(UPTOWN.minX, UPTOWN.minZ, UPTOWN.maxX - UPTOWN.minX, UPTOWN.maxZ - UPTOWN.minZ + 12);
+  g.fillStyle = '#8ccf6a';
+  g.fillRect(UPTOWN.minX + 8, UPTOWN.minZ + 8, UPTOWN.maxX - UPTOWN.minX - 16, UPTOWN.maxZ - UPTOWN.minZ + 12);
+  g.save();
+  g.beginPath();
+  g.rect(UPTOWN.minX + 8, UPTOWN.minZ + 8, UPTOWN.maxX - UPTOWN.minX - 16, UPTOWN.maxZ - UPTOWN.minZ);
+  g.clip();
+  for (const [r, c] of [[100, '#7cc25e'], [70, '#6fb352'], [45, '#62a447']] as const) {
+    g.fillStyle = c;
+    g.beginPath();
+    g.arc(OBSERVATORY.x, OBSERVATORY.z, r, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.restore();
   // Palm Isle
   g.fillStyle = '#f2dca0';
   g.beginPath();

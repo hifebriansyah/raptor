@@ -72,12 +72,13 @@ export class MysterySystem {
       if (this.cooldown <= 0 && this.checkTimer <= 0) {
         this.checkTimer = 12;
         const alone = (s.raptorStatus === 'parked' || s.raptorStatus === 'idle') && !g.riding;
-        const far = g.professor.pos.distanceTo(g.raptor.pos) > 70;
+        const far = g.worldPos.distanceTo(g.raptor.pos) > 70;
         if (alone && far && !g.race.active && !s.dialogue) {
           const craving = s.treats < 30;
           const dispenserGuard = s.raptorStatus === 'parked' && s.upgrades.dispenser >= 1;
           if (craving && !dispenserGuard && Math.random() < 0.6) this.begin('cookie');
-          else if (Math.random() < 0.22 * (1 - 0.3 * s.upgrades.alarm)) this.begin('stolen');
+          // thieves can strike anywhere the Raptor is left alone; the Lab alarm only guards the Lab
+          else if (Math.random() < (s.raptorStatus === 'idle' ? 0.3 : 0.22 * (1 - 0.3 * s.upgrades.alarm))) this.begin('stolen');
           else if (s.upgrades.alarm > 0 && Math.random() < 0.15) showToast('Your Lab alarm scared off a would-be thief!');
         }
       }
@@ -319,6 +320,9 @@ export class MysterySystem {
   linesFor(id: NpcId): { lines: DialogueLine[]; after?: () => void } | null {
     const c = this.case;
     if (!c) return null;
+    if (id !== 'grandma' && id !== 'leo' && id !== 'max') {
+      return { lines: [{ speaker: id === 'gwen' ? 'Gwen' : 'Townsfolk', text: c.kind === 'stolen' ? 'Your Raptor’s gone? Go and ask your mum, she sees everything in that crystal ball of hers!' : 'Lost the Raptor? I heard munching from Grandma’s place…' }] };
+    }
     if (c.kind === 'stolen') {
       if (id === 'grandma') {
         if (!c.askedGrandma) {
@@ -333,7 +337,7 @@ export class MysterySystem {
         return { lines: [{ speaker: 'Grandma', text: `The vision showed ${c.hideout!.name}. Be careful, dear. Those ruffians hate getting wet!` }] };
       }
       return {
-        lines: [id === 'leo' ? { speaker: 'Leo', text: 'A shady van zoomed past with a giant tarp on it! Ask Grandma, she sees EVERYTHING.' } : { speaker: 'Mia', text: 'Thieves hate water! Squirt them with your blaster, Professor!' }],
+        lines: [id === 'leo' ? { speaker: 'Leo', text: 'A shady van zoomed past with a giant tarp on it! Ask Grandma, she sees EVERYTHING.' } : { speaker: 'Max', text: 'Thieves hate water! Squirt them with your blaster, Dad!' }],
       };
     }
     // cookie case
@@ -347,7 +351,7 @@ export class MysterySystem {
       };
     }
     return {
-      lines: [id === 'leo' ? { speaker: 'Leo', text: 'I heard metallic crunching upstairs! CRUNCH CRUNCH!' } : { speaker: 'Mia', text: 'Did you check the attic, Professor? The stairs are inside, by the door.' }],
+      lines: [id === 'leo' ? { speaker: 'Leo', text: 'I heard metallic crunching upstairs! CRUNCH CRUNCH!' } : { speaker: 'Max', text: 'Did you check the attic, Dad? The stairs are inside, by the door.' }],
       after: () => this.atticHint(),
     };
   }

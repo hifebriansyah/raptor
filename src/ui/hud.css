@@ -364,7 +364,7 @@ kbd {
 .audio-toggles {
   position: absolute;
   top: 16px;
-  right: 248px;
+  right: 16px;
   display: flex;
   gap: 8px;
   pointer-events: auto;
@@ -511,8 +511,8 @@ body.touch .dialogue { bottom: 180px; }
   .stick-base { left: 14px; width: 116px; height: 116px; }
 }
 
-@media (max-width: 900px) {
-  .audio-toggles { right: 16px; top: 64px; }
+@media (max-width: 640px) {
+  .audio-toggles { flex-wrap: wrap; justify-content: flex-end; width: 144px; }
 }
 
 /* ── Lock-on marker ───────────────────────── */
@@ -545,3 +545,120 @@ body.touch .dialogue { bottom: 180px; }
 .lock-marker.firing { width: 34px; height: 34px; border-color: #4cc9f0; box-shadow: 0 0 12px rgba(76, 201, 240, 0.9); border-style: solid; animation: none; }
 .lock-marker.firing::before { background: #4cc9f0; }
 @keyframes lockspin { to { rotate: 360deg; } }
+
+/* ── Menu ─────────────────────────────────── */
+.menu {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(ellipse at center, rgba(27, 42, 73, 0.55), rgba(10, 14, 24, 0.8));
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s, visibility 0.2s;
+  pointer-events: auto;
+  z-index: 20;
+}
+.menu.show { opacity: 1; visibility: visible; }
+.menu-card {
+  position: relative;
+  width: min(460px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 22px 20px 14px;
+  background: rgba(20, 24, 36, 0.95);
+  border: 1px solid var(--hud-border);
+  border-top: 5px solid var(--gold);
+  border-radius: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+}
+.menu-close { position: absolute; top: 12px; right: 12px; background: none; border: 0; color: var(--hud-muted); cursor: pointer; padding: 6px; display: grid; }
+.menu-title { display: flex; gap: 14px; align-items: center; margin-bottom: 18px; padding-right: 28px; }
+.menu-logo { width: 52px; height: 52px; flex: none; display: grid; place-items: center; border-radius: 16px; background: linear-gradient(135deg, #5ef2ff, #2a9d8f); color: #0b1d33; }
+.menu-title h1 { margin: 0; font-size: 1.6rem; font-weight: 900; letter-spacing: 0.01em; }
+.menu-title p { margin: 2px 0 0; color: var(--hud-muted); font-size: 0.85rem; line-height: 1.35; }
+.menu-body { display: flex; flex-direction: column; gap: 8px; }
+.menu-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  font: inherit;
+  font-weight: 800;
+  font-size: 1rem;
+  color: var(--hud-text);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--hud-border);
+  border-radius: 14px;
+  cursor: pointer;
+  text-align: left;
+}
+.menu-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.14); }
+.menu-btn:disabled { color: var(--hud-muted); cursor: default; }
+.menu-btn.primary { background: var(--gold); color: #1b1f2a; border-color: transparent; }
+.menu-btn.primary:hover { background: #ffdc85; }
+.menu-btn.danger { background: #e63946; border-color: transparent; }
+.menu-back { align-self: flex-start; background: none; border: 0; color: var(--hud-muted); font: inherit; font-weight: 800; cursor: pointer; padding: 2px 0 6px; }
+.menu-row { display: flex; flex-direction: column; gap: 8px; padding: 10px 0; border-top: 1px solid var(--hud-border); }
+.menu-row-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.menu-row-head small { width: 100%; color: var(--hud-muted); font-size: 0.78rem; }
+.menu-seg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.menu-seg button, .menu-toggle {
+  padding: 8px 6px;
+  font: inherit;
+  font-weight: 800;
+  font-size: 0.85rem;
+  color: var(--hud-text);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--hud-border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.menu-seg button.on, .menu-toggle.on { background: #5ef2ff; color: #0b1d33; border-color: transparent; }
+.menu-extras { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.menu-toggle { display: flex; align-items: center; gap: 6px; text-align: left; }
+.menu-controls { display: flex; flex-direction: column; font-size: 0.85rem; }
+.menu-controls .help-row { padding: 5px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.menu-foot { margin-top: 14px; text-align: center; color: var(--hud-muted); font-size: 0.75rem; }
+.hud.menu-open > :not(.menu) { visibility: hidden; }
+
+/* ── Dialogue portrait + clock ────────────── */
+.dialogue { display: flex; gap: 14px; align-items: flex-start; }
+.dialogue-main { flex: 1; min-width: 0; }
+.dialogue-portrait { width: 84px; height: 84px; flex: none; border-radius: 14px; border: 3px solid var(--speaker, var(--gold)); background: #fff; object-fit: cover; }
+@media (max-width: 520px) { .dialogue-portrait { width: 56px; height: 56px; } }
+.clock { font-weight: 800; font-size: 0.8rem; color: var(--hud-muted); display: flex; align-items: center; gap: 6px; }
+
+/* ── Iris wipe ────────────────────────────── */
+.iris {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 15;
+  background: radial-gradient(circle at 50% 50%, transparent 0, transparent var(--iris, 150vmax), #0b0d14 calc(var(--iris, 150vmax) + 1px));
+  transition: --iris 0.38s ease-in;
+}
+.iris.closed { --iris: 0vmax; }
+.iris::after {
+  content: attr(data-label);
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-weight: 900;
+  font-size: 1.2rem;
+  color: var(--gold);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.iris.closed::after { opacity: 1; transition-delay: 0.3s; }
+@property --iris { syntax: '<length>'; inherits: false; initial-value: 150vmax; }
+.travel .bench-card { width: min(720px, calc(100vw - 32px)); border-top-color: #c77dff; }
+.travel-body { display: flex; gap: 14px; flex-wrap: wrap; }
+.travel-body canvas { width: min(320px, 100%); aspect-ratio: 1; border-radius: 50%; }
+.travel-list { flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 6px; }
+.travel-list .menu-btn { padding: 8px 12px; font-size: 0.9rem; }
+
+.chip.gun { font-size: 0.8rem; font-weight: 700; color: #ffd6f0; flex-wrap: wrap; gap: 6px; }
+.chip.gun.hidden { display: none; }
+.gun-extra { display: inline-flex; align-items: center; gap: 3px; color: var(--gold); font-weight: 800; }

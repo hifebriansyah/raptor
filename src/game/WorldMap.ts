@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { PhysicsSystem, RAPIER } from '../systems/PhysicsSystem';
-import { BOUNDS, MAIN_ISLAND, PALM_ISLE, SEABED_Y, WATER_Y } from './Terrain';
+import { BOUNDS, LIGHTHOUSE_HILL, MAIN_ISLAND, PALM_ISLE, PARK_BASIN, SEABED_Y, WATER_Y, floorAt } from './Terrain';
+import { Uptown, buildTerrainMesh } from './Uptown';
 
 /** Map layout constants (metres). The town is a 9×9 road grid inside a coastal ring. */
 export const WORLD = {
@@ -13,7 +14,19 @@ export const WORLD = {
   roadMin: -240,
   roadMax: 240,
   roadWidth: 10,
+  /** 4-lane boulevards (18 m): the ring road and two avenues. x = roads running north–south. */
+  wideX: [-240, -120, 240] as readonly number[],
+  wideZ: [-240, 120, 240] as readonly number[],
+  wideWidth: 18,
 } as const;
+
+/** Width of the north–south road at x (or the east–west road at z). */
+export function roadWidthX(x: number): number {
+  return WORLD.wideX.includes(x) ? WORLD.wideWidth : WORLD.roadWidth;
+}
+export function roadWidthZ(z: number): number {
+  return WORLD.wideZ.includes(z) ? WORLD.wideWidth : WORLD.roadWidth;
+}
 
 export type FeatureKind = 'road' | 'sidewalk' | 'building' | 'park' | 'lab' | 'pad' | 'grandma' | 'hideout' | 'hut' | 'pier';
 
@@ -36,6 +49,29 @@ export interface Hideout {
   /** Where thieves stand guard. */
   guardSpots: THREE.Vector3[];
 }
+
+/** A town building's front door (every building can be entered, see InteriorSystem). */
+export interface BuildingDoor {
+  /** On the ground at the door. */
+  pos: THREE.Vector3;
+  /** Direction the door faces (out of the building). */
+  facing: number;
+  building: { x: number; z: number; w: number; d: number; h: number };
+  kind: 'house' | 'shop' | 'office' | 'tower';
+  color: string;
+}
+
+export interface SpecialDoor {
+  id: 'lab' | 'police' | 'lighthouse' | 'observatory' | 'grandma' | 'shack' | 'station' | 'moonbase';
+  pos: THREE.Vector3;
+  facing: number;
+  label: string;
+  /** Where the lift / stairs come out (platform, roof). */
+  roof?: THREE.Vector3;
+}
+
+/** Special buildings that get a block to themselves. */
+export const POLICE_BLOCK = { x: -90, z: -90 };
 
 export interface Landmarks {
   labPad: { x: number; z: number; radius: number; facing: number };
@@ -88,6 +124,21 @@ export class WorldMap {
   /** Hydrants and park fountains: the Raptor refills its water tank near these. */
   readonly refillPoints: THREE.Vector3[] = [];
   readonly hideouts: Hideout[] = [];
+  /** Front doors of the town buildings. */
+  readonly doors: BuildingDoor[] = [];
+  /** Doors of the handcrafted landmarks (Lab, police station, lighthouse, observatory…). */
+  readonly specialDoors: SpecialDoor[] = [];
+  /** Blocks kept free of town buildings (police station). */
+  private readonly reservedBlocks: [number, number][] = [[POLICE_BLOCK.x, POLICE_BLOCK.z]];
+  /** Toy-brick studs on the rooftops (one instanced mesh). */
+  private readonly studs: THREE.Matrix4[] = [];
+  uptown!: Uptown;
+  /** Where the conductor waits for the train (by the south station). */
+  readonly stationSpot = new THREE.Vector3(5, 0, WORLD.roadMax + 19);
+  /** Trees to plant (Uptown adds its own). */
+  addTree(p: THREE.Vector3): void {
+    this.treeSpots.push(p);
+  }
   /** Ring-road loop (clockwise corners) the rival racers drive. */
   readonly ringLoop: THREE.Vector3[] = [];
 
@@ -100,13 +151,16 @@ export class WorldMap {
     this.buildLab();
     this.buildGrandmaHouse();
     this.buildBlocks();
+    this.buildPoliceStation();
     this.buildHydrants();
     this.buildRamps();
     this.buildHideouts();
     this.buildPalmIsle();
+    this.uptown = new Uptown(this.scene, this.physics, this);
     this.buildTrees();
     this.buildBoundary();
     this.flushMerged();
+    this.flushStuds();
 
     const R = WORLD.roadMax;
     this.ringLoop.push(new THREE.Vector3(-R, 0, -R), new THREE.Vector3(R, 0, -R), new THREE.Vector3(R, 0, R), new THREE.Vector3(-R, 0, R));
@@ -197,6 +251,28 @@ export class WorldMap {
     this.bucket(color + '|ns').push(new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2).translate(x, y, z));
   }
 
+  /** LEGO-style studs on a rooftop (centre, top height, size). */
+  addStuds(cx: number, y: number, cz: number, w: number, d: number): void {
+    const step = 2.4;
+    const nx = Math.max(1, Math.floor(w / step));
+    const nz = Math.max(1, Math.floor(d / step));
+    const tmp = new THREE.Object3D();
+    for (let i = 0; i < nx; i++) {
+      for (let k = 0; k < nz; k++) {
+        tmp.position.set(cx - ((nx - 1) * step) / 2 + i * step, y + 0.15, cz - ((nz - 1) * step) / 2 + k * step);
+        tmp.updateMatrix();
+        this.studs.push(tmp.matrix.clone());
+      }
+    }
+  }
+
+  private flushStuds(): void {
+    const mesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.55, 0.55, 0.3, 8), this.mat('#f1f3f5'), this.studs.length);
+    this.studs.forEach((m, i) => mesh.setMatrixAt(i, m));
+    mesh.receiveShadow = true;
+    this.scene.add(mesh);
+  }
+
   /** Turn all `merge` boxes into one mesh per colour. */
   private flushMerged(): void {
     for (const [key, geos] of this.mergeBuckets) {
@@ -239,7 +315,7 @@ export class WorldMap {
     this.scene.add(seabed);
     const L = MAIN_ISLAND.half;
     this.flat(new THREE.PlaneGeometry(L * 2, L * 2), '#f2dca0', 0, 0, 0); // beach
-    this.flat(new THREE.PlaneGeometry(L * 2 - 24, L * 2 - 24), '#8ccf6a', 0, 0.005, 0); // grass
+    this.flat(new THREE.PlaneGeometry(L * 2 - 24, L * 2 - 12), '#8ccf6a', 0, 0.005, -6); // grass (no beach on the north side, where Uptown joins)
     // Sandy slope from the shoreline down to the sea floor (a square frustum)
     const shelf = 9;
     const skirt = new THREE.Mesh(
@@ -251,20 +327,25 @@ export class WorldMap {
   }
 
   private buildRoads(): void {
-    const { roadMin, roadMax, roadStep, roadWidth } = WORLD;
-    const length = roadMax - roadMin + roadWidth;
+    const { roadMin, roadMax, roadStep, wideWidth } = WORLD;
+    const length = roadMax - roadMin + wideWidth;
     const roadMat = '#5d6470';
     for (let r = roadMin; r <= roadMax; r += roadStep) {
-      this.flat(new THREE.PlaneGeometry(roadWidth, length), roadMat, r, 0.02, 0);
-      this.flat(new THREE.PlaneGeometry(length, roadWidth), roadMat, 0, 0.021, r);
-      this.features.push({ kind: 'road', x: r, z: 0, w: roadWidth, d: length });
-      this.features.push({ kind: 'road', x: 0, z: r, w: length, d: roadWidth });
+      const wx = roadWidthX(r);
+      const wz = roadWidthZ(r);
+      this.flat(new THREE.PlaneGeometry(wx, length), roadMat, r, 0.02, 0);
+      this.flat(new THREE.PlaneGeometry(length, wz), roadMat, 0, 0.021, r);
+      this.features.push({ kind: 'road', x: r, z: 0, w: wx, d: length });
+      this.features.push({ kind: 'road', x: 0, z: r, w: length, d: wz });
       // Sidewalk strips along both edges between intersections (pedestrians walk here)
-      const seg = roadStep - roadWidth;
       for (let m = roadMin + roadStep / 2; m < roadMax; m += roadStep) {
+        const segX = roadStep - (roadWidthZ(m - roadStep / 2) + roadWidthZ(m + roadStep / 2)) / 2;
+        const segZ = roadStep - (roadWidthX(m - roadStep / 2) + roadWidthX(m + roadStep / 2)) / 2;
+        const midX = m + (roadWidthZ(m - roadStep / 2) - roadWidthZ(m + roadStep / 2)) / 4;
+        const midZ = m + (roadWidthX(m - roadStep / 2) - roadWidthX(m + roadStep / 2)) / 4;
         for (const s of [-1, 1]) {
-          this.flatMerged(1.6, seg, '#c9ccd3', r + s * (roadWidth / 2 - 0.8), 0.025, m);
-          this.flatMerged(seg, 1.6, '#c9ccd3', m, 0.026, r + s * (roadWidth / 2 - 0.8));
+          this.flatMerged(1.6, segX, '#c9ccd3', r + s * (wx / 2 - 0.8), 0.025, midX);
+          this.flatMerged(segZ, 1.6, '#c9ccd3', midZ, 0.026, r + s * (wz / 2 - 0.8));
         }
       }
       // zebra crossings at each intersection approach are drawn below with the dashes
@@ -275,16 +356,21 @@ export class WorldMap {
     const tmp = new THREE.Object3D();
     for (let r = roadMin; r <= roadMax; r += roadStep) {
       for (let t = roadMin; t < roadMax; t += 4) {
-        const nearCross = Math.abs(((t - roadMin) % roadStep) - roadStep / 2) > roadStep / 2 - roadWidth;
+        const nearCross = Math.abs(((t - roadMin) % roadStep) - roadStep / 2) > roadStep / 2 - WORLD.wideWidth * 0.75;
         if (nearCross) continue;
-        tmp.rotation.set(-Math.PI / 2, 0, 0);
-        tmp.position.set(r, 0.03, t + 1);
-        tmp.updateMatrix();
-        dashes.push(tmp.matrix.clone());
-        tmp.rotation.set(-Math.PI / 2, 0, Math.PI / 2);
-        tmp.position.set(t + 1, 0.03, r);
-        tmp.updateMatrix();
-        dashes.push(tmp.matrix.clone());
+        // centre line, plus lane lines on the 4-lane boulevards
+        for (const off of WORLD.wideX.includes(r) ? [-4.5, 0, 4.5] : [0]) {
+          tmp.rotation.set(-Math.PI / 2, 0, 0);
+          tmp.position.set(r + off, 0.03, t + 1);
+          tmp.updateMatrix();
+          dashes.push(tmp.matrix.clone());
+        }
+        for (const off of WORLD.wideZ.includes(r) ? [-4.5, 0, 4.5] : [0]) {
+          tmp.rotation.set(-Math.PI / 2, 0, Math.PI / 2);
+          tmp.position.set(t + 1, 0.03, r + off);
+          tmp.updateMatrix();
+          dashes.push(tmp.matrix.clone());
+        }
       }
     }
     const dashMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.25, 2), this.mat('#f4f1de'), dashes.length);
@@ -322,6 +408,7 @@ export class WorldMap {
 
   /** A palm: a gently curved trunk and drooping fronds (baked into the merged scenery). */
   private palm(x: number, z: number, lean: number, height: number): void {
+    const base = floorAt(x, z);
     const segs = 6;
     const segH = height / segs;
     let px = x;
@@ -331,16 +418,16 @@ export class WorldMap {
       const off = Math.pow(i / segs, 2) * lean;
       px = x + Math.cos(dir) * off;
       pz = z + Math.sin(dir) * off;
-      this.box(px, segH * (i + 0.5), pz, 0.55 - i * 0.04, segH * 1.05, 0.55 - i * 0.04, i % 2 ? '#9c6b3f' : '#b07d4f', { collide: false, merge: true });
+      this.box(px, base + segH * (i + 0.5), pz, 0.55 - i * 0.04, segH * 1.05, 0.55 - i * 0.04, i % 2 ? '#9c6b3f' : '#b07d4f', { collide: false, merge: true });
     }
-    const top = height;
+    const top = base + height;
     for (let k = 0; k < 7; k++) {
       const a = (k / 7) * Math.PI * 2 + this.rand() * 0.3;
       const rot = new THREE.Euler(0.45 + this.rand() * 0.2, a, 0, 'YXZ');
       const off = new THREE.Vector3(0, 0, 1.6).applyEuler(rot);
       this.box(px + off.x, top + off.y - 0.2, pz + off.z, 0.9, 0.12, 3.4, k % 2 ? '#2d9a4e' : '#3fb35c', { collide: false, merge: true, rot });
     }
-    this.physics.addStaticCylinder(new THREE.Vector3(x, height / 2, z), height / 2, 0.35);
+    this.physics.addStaticCylinder(new THREE.Vector3(x, base + height / 2, z), height / 2, 0.35);
   }
 
   private buildPalmIsle(): void {
@@ -371,21 +458,22 @@ export class WorldMap {
 
     // Lighthouse on the east point, with a spinning beam
     {
-      const lx = x + r - 16;
-      const lz = z + 6;
+      const lx = LIGHTHOUSE_HILL.x;
+      const lz = LIGHTHOUSE_HILL.z;
+      const ly = LIGHTHOUSE_HILL.top;
       for (let i = 0; i < 6; i++) {
         const seg = new THREE.Mesh(new THREE.CylinderGeometry(2.6 - i * 0.18, 2.8 - i * 0.18, 3.2, 14), this.mat(i % 2 ? '#e63946' : '#ffffff'));
-        seg.position.set(lx, 1.6 + i * 3.2, lz);
+        seg.position.set(lx, ly + 1.6 + i * 3.2, lz);
         seg.castShadow = true;
         this.scene.add(seg);
       }
       const room = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.7, 2, 12), new THREE.MeshBasicMaterial({ color: '#fff3b0' }));
-      room.position.set(lx, 20.2, lz);
+      room.position.set(lx, ly + 20.2, lz);
       const cap = new THREE.Mesh(new THREE.ConeGeometry(2.2, 1.8, 12), this.mat('#2b2d42'));
-      cap.position.set(lx, 22.1, lz);
+      cap.position.set(lx, ly + 22.1, lz);
       this.scene.add(room, cap);
       const beam = new THREE.Group();
-      beam.position.set(lx, 20.2, lz);
+      beam.position.set(lx, ly + 20.2, lz);
       const cone = new THREE.Mesh(
         new THREE.ConeGeometry(4, 40, 16, 1, true).rotateZ(-Math.PI / 2).translate(20, 0, 0),
         new THREE.MeshBasicMaterial({ color: '#fff7c2', transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }),
@@ -393,7 +481,11 @@ export class WorldMap {
       beam.add(cone);
       this.scene.add(beam);
       this.lighthouseBeam = beam;
-      this.physics.addStaticCylinder(new THREE.Vector3(lx, 11, lz), 11, 2.8);
+      this.physics.addStaticCylinder(new THREE.Vector3(lx, ly + 11, lz), 11, 2.8);
+      // lighthouse door (enterable)
+      this.box(lx - 2.75, ly + 1.3, lz, 0.2, 2.6, 1.4, '#6d4c41', { collide: false, castShadow: false });
+      this.specialDoors.push({ id: 'lighthouse', pos: new THREE.Vector3(lx - 3.2, ly, lz), facing: -Math.PI / 2, label: 'the lighthouse' });
+      buildTerrainMesh(this.scene, { minX: lx - 36, maxX: lx + 36, minZ: lz - 36, maxZ: lz + 36 }, 2, { skipFlat: true, lift: 0.02 });
     }
 
     // Beach huts near the pier
@@ -429,6 +521,9 @@ export class WorldMap {
       flag.position.set(sx + 5.5, 6.7, sz + 3.6);
       this.scene.add(flag);
       for (const [cx, cz] of [[-3, 5], [3.5, 6], [-6, 2]]) this.box(sx + cx, 0.6, sz + cz, 1.2, 1.2, 1.2, '#d4a373');
+      // a trapdoor-ish back door to the treasure room
+      this.box(sx, 1.2, sz - 4.2, 1.4, 2.4, 0.1, '#3d2b1f', { collide: false, castShadow: false });
+      this.specialDoors.push({ id: 'shack', pos: new THREE.Vector3(sx, 0, sz - 4.8), facing: Math.PI, label: 'the pirate’s treasure room' });
       this.hideouts.push({
         name: 'the pirate shack on Palm Isle',
         raptorSpot: new THREE.Vector3(sx, 0, sz + 1),
@@ -464,6 +559,9 @@ export class WorldMap {
     for (let i = 0; i < 5; i++) {
       this.box(x, 0.6 + i * 1.0, bz + D / 2 + 0.18, 8.6, 0.08, 0.05, '#4c566a', { collide: false, castShadow: false });
     }
+    // front door for people (left of the garage), into the Lab and its Teleport Hub
+    this.box(x - 8.5, 1.3, bz + D / 2 + 0.07, 1.5, 2.6, 0.15, '#2f80ed', { collide: false, castShadow: false });
+    this.specialDoors.push({ id: 'lab', pos: new THREE.Vector3(x - 8.5, 0, bz + D / 2 + 0.6), facing: 0, label: 'the Lab' });
     // windows
     for (const wx of [-8.5, 8.5]) {
       this.box(x + wx, 4.2, bz + D / 2 + 0.06, 4, 2.2, 0.15, '#9ad7ff', { collide: false, castShadow: false });
@@ -650,19 +748,48 @@ export class WorldMap {
   // ───────────────────────────────────────────── town blocks
 
   private buildBlocks(): void {
-    const { roadMin, roadMax, roadStep, roadWidth } = WORLD;
+    const { roadMin, roadMax, roadStep } = WORLD;
     const palette = ['#ffd6a5', '#fdffb6', '#caffbf', '#9bf6ff', '#a0c4ff', '#bdb2ff', '#ffc6ff', '#ffadad', '#e9edc9', '#f1f1f1'];
-    const inner = roadStep - roadWidth;
-    for (let bx = roadMin + roadStep / 2; bx < roadMax; bx += roadStep) {
-      for (let bz = roadMin + roadStep / 2; bz < roadMax; bz += roadStep) {
-        if ((bx === LAB.x && bz === LAB.z) || (bx === GRANDMA.x && bz === GRANDMA.z)) continue;
-        if (HIDEOUT_BLOCKS.some(([hx, hz]) => hx === bx && hz === bz)) continue;
+    const half = roadStep / 2;
+    for (let gx = roadMin + roadStep / 2; gx < roadMax; gx += roadStep) {
+      for (let gz = roadMin + roadStep / 2; gz < roadMax; gz += roadStep) {
+        if ((gx === LAB.x && gz === LAB.z) || (gx === GRANDMA.x && gz === GRANDMA.z)) continue;
+        if (HIDEOUT_BLOCKS.some(([hx, hz]) => hx === gx && hz === gz)) continue;
+        if (this.reservedBlocks.some(([rx, rz]) => rx === gx && rz === gz)) continue;
+        // the block's usable area between the (2- or 4-lane) roads around it
+        const x0 = gx - half + roadWidthX(gx - half) / 2;
+        const x1 = gx + half - roadWidthX(gx + half) / 2;
+        const z0 = gz - half + roadWidthZ(gz - half) / 2;
+        const z1 = gz + half - roadWidthZ(gz + half) / 2;
+        const bx = (x0 + x1) / 2;
+        const bz = (z0 + z1) / 2;
+        const inner = Math.min(x1 - x0, z1 - z0);
+
+        const basin = gx === PARK_BASIN.x && gz === PARK_BASIN.z;
+        if (basin) {
+          // The sunken park: a sidewalk frame around a grassy bowl (its own terrain mesh)
+          const r = PARK_BASIN.rim + 1;
+          const w = x1 - x0;
+          const d = z1 - z0;
+          this.flatMerged(w, (d - 2 * r) / 2, '#d8dcd0', bx, 0.01, z0 + (d - 2 * r) / 4);
+          this.flatMerged(w, (d - 2 * r) / 2, '#d8dcd0', bx, 0.01, z1 - (d - 2 * r) / 4);
+          this.flatMerged((w - 2 * r) / 2, 2 * r, '#d8dcd0', x0 + (w - 2 * r) / 4, 0.01, bz);
+          this.flatMerged((w - 2 * r) / 2, 2 * r, '#d8dcd0', x1 - (w - 2 * r) / 4, 0.01, bz);
+          buildTerrainMesh(this.scene, { minX: PARK_BASIN.x - r, maxX: PARK_BASIN.x + r, minZ: PARK_BASIN.z - r, maxZ: PARK_BASIN.z + r }, 1.5, { lift: 0.015 });
+          this.features.push({ kind: 'park', x: bx, z: bz, w: 2 * r, d: 2 * r });
+          this.buildFountain(PARK_BASIN.x, PARK_BASIN.z);
+          for (let i = 0; i < 10; i++) {
+            const a = (i / 10) * Math.PI * 2;
+            this.treeSpots.push(new THREE.Vector3(PARK_BASIN.x + Math.cos(a) * 15, 0, PARK_BASIN.z + Math.sin(a) * 15));
+          }
+          continue;
+        }
 
         // Sidewalk tone so blocks read clearly against the roads
-        this.flatMerged(inner, inner, '#d8dcd0', bx, 0.01, bz);
+        this.flatMerged(x1 - x0, z1 - z0, '#d8dcd0', bx, 0.01, bz);
 
         const distFromCentre = Math.hypot(bx, bz);
-        const isPark = this.rand() < 0.18 || (bx === 30 && bz === -30);
+        const isPark = this.rand() < 0.18;
         if (isPark) {
           this.flatMerged(inner - 4, inner - 4, '#76c25a', bx, 0.015, bz);
           this.features.push({ kind: 'park', x: bx, z: bz, w: inner - 4, d: inner - 4 });
@@ -687,7 +814,9 @@ export class WorldMap {
           }
           const w = 9 + this.rand() * (q - 12);
           const d = 9 + this.rand() * (q - 12);
-          const h = downtown ? 8 + this.rand() * 26 : 4 + this.rand() * 6;
+          // storeys of 3.6 m: downtown 2–9 storeys, suburbs 1–2
+          const floors = downtown ? 2 + Math.floor(this.rand() * 8) : 1 + Math.floor(this.rand() * 2);
+          const h = floors * 3.6 + 0.6;
           const cx = bx + (ox * q) / 2 + (this.rand() - 0.5) * 2;
           const cz = bz + (oz * q) / 2 + (this.rand() - 0.5) * 2;
           const color = palette[Math.floor(this.rand() * palette.length)];
@@ -699,48 +828,80 @@ export class WorldMap {
             this.box(cx + (this.rand() - 0.5) * (w - rw), h + 1.2, cz + (this.rand() - 0.5) * (d - rw), rw, 2, rw, '#b0b8c4', { merge: true });
           }
           // Window rows on every floor (baked, no colliders)
-          for (let fy = 2; fy < h - 1; fy += 3.2) {
-            this.box(cx, fy, cz, w + 0.06, 1.1, d + 0.06, '#7fb8e0', { collide: false, castShadow: false, merge: true });
+          for (let f = 0; f < floors; f++) {
+            if (f === 0) continue; // the ground floor has the door and shop windows instead
+            this.box(cx, f * 3.6 + 1.9, cz, w + 0.06, 1.2, d + 0.06, '#7fb8e0', { collide: false, castShadow: false, merge: true });
           }
-          // Door on the side facing the nearest road
-          const doorSide = Math.abs(cx - bx) > Math.abs(cz - bz) ? [Math.sign(cx - bx), 0] : [0, Math.sign(cz - bz)];
-          this.box(cx + doorSide[0] * (w / 2 + 0.05), 1.1, cz + doorSide[1] * (d / 2 + 0.05), doorSide[0] ? 0.1 : 1.6, 2.2, doorSide[1] ? 0.1 : 1.6, '#6d4c41', { collide: false, castShadow: false, merge: true });
+          // Door (2.6 m) on the side facing the nearest road, shop windows beside it
+          const doorSide: [number, number] = Math.abs(cx - bx) > Math.abs(cz - bz) ? [Math.sign(cx - bx), 0] : [0, Math.sign(cz - bz)];
+          const door = new THREE.Vector3(cx + doorSide[0] * (w / 2 + 0.05), 0, cz + doorSide[1] * (d / 2 + 0.05));
+          this.box(door.x, 1.3, door.z, doorSide[0] ? 0.12 : 1.5, 2.6, doorSide[1] ? 0.12 : 1.5, '#6d4c41', { collide: false, castShadow: false, merge: true });
+          this.box(door.x, 2.75, door.z, doorSide[0] ? 0.14 : 2.1, 0.3, doorSide[1] ? 0.14 : 2.1, color === '#f1f1f1' ? '#e63946' : '#ffffff', { collide: false, castShadow: false, merge: true });
+          for (const side of [-1, 1]) {
+            const off = side * 2.6;
+            this.box(door.x + (doorSide[1] ? off : 0), 1.5, door.z + (doorSide[0] ? off : 0), doorSide[0] ? 0.1 : 2.4, 1.6, doorSide[1] ? 0.1 : 2.4, '#9ad7ff', { collide: false, castShadow: false, merge: true });
+          }
+          this.addStuds(cx, h + 0.3, cz, w + 0.4, d + 0.4);
           this.features.push({ kind: 'building', x: cx, z: cz, w, d, h, color });
+          this.doors.push({ pos: door, facing: Math.atan2(doorSide[0], doorSide[1]), building: { x: cx, z: cz, w, d, h }, kind: downtown ? (floors >= 6 ? 'tower' : floors >= 3 ? 'office' : 'shop') : 'house', color });
         }
       }
     }
   }
 
+  /** The police station: blue and white, POLICE sign, beacon lights, a patrol car out front. */
+  private buildPoliceStation(): void {
+    const { x, z } = POLICE_BLOCK;
+    this.flatMerged(48, 48, '#d8dcd0', x, 0.01, z);
+    const bz = z - 6;
+    this.box(x, 4.5, bz, 26, 9, 18, '#f1f3f5');
+    this.box(x, 8.2, bz + 9.06, 26.2, 1.4, 0.2, '#1d3557', { collide: false });
+    this.box(x, 8.2, bz + 9.2, 9, 1.0, 0.1, '#ffffff', { collide: false, castShadow: false });
+    for (let i = 0; i < 6; i++) this.box(x - 3.6 + i * 1.44, 8.2, bz + 9.27, 0.9, 0.6, 0.05, '#1d3557', { collide: false, castShadow: false }); // P O L I C E
+    for (const wx of [-8, 8]) this.box(x + wx, 4.2, bz + 9.06, 5, 2.2, 0.15, '#9ad7ff', { collide: false, castShadow: false });
+    this.box(x, 1.3, bz + 9.07, 2, 2.6, 0.15, '#1d3557', { collide: false, castShadow: false });
+    this.box(x, 2.8, bz + 9.6, 3.4, 0.2, 1.4, '#1d3557', { collide: false }); // canopy
+    for (const sx of [-1.2, 1.2]) {
+      const b = new THREE.Mesh(new THREE.SphereGeometry(0.35, 10, 8), new THREE.MeshBasicMaterial({ color: sx < 0 ? '#ff3b3b' : '#4361ee' }));
+      b.position.set(x + sx, 3.1, bz + 10.2);
+      this.scene.add(b);
+    }
+    this.addStuds(x, 9.3, bz, 26, 18);
+    this.specialDoors.push({ id: 'police', pos: new THREE.Vector3(x, 0, bz + 9.8), facing: 0, label: 'the police station' });
+    this.features.push({ kind: 'building', x, z: bz, w: 26, d: 18, h: 9, color: '#a0c4ff' });
+  }
+
   private buildFountain(x: number, z: number): void {
+    const y0 = floorAt(x, z);
     const basin = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.5, 0.8, 16), this.mat('#d9d9d9'));
-    basin.position.set(x, 0.4, z);
+    basin.position.set(x, y0 + 0.4, z);
     basin.castShadow = basin.receiveShadow = true;
     this.scene.add(basin);
     const water = new THREE.Mesh(new THREE.CircleGeometry(2.8, 16).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: '#4cc9f0' }));
-    water.position.set(x, 0.75, z);
+    water.position.set(x, y0 + 0.75, z);
     this.scene.add(water);
     const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.5, 2.2, 8), this.mat('#bfc5cc'));
-    spout.position.set(x, 1.1, z);
+    spout.position.set(x, y0 + 1.1, z);
     spout.castShadow = true;
     this.scene.add(spout);
     const top = new THREE.Mesh(new THREE.SphereGeometry(0.7, 10, 6), new THREE.MeshLambertMaterial({ color: '#9ae6ff', transparent: true, opacity: 0.75 }));
-    top.position.set(x, 2.4, z);
+    top.position.set(x, y0 + 2.4, z);
     this.scene.add(top);
-    this.physics.addStaticCylinder(new THREE.Vector3(x, 0.4, z), 0.4, 3.4);
-    this.refillPoints.push(new THREE.Vector3(x, 0, z));
+    this.physics.addStaticCylinder(new THREE.Vector3(x, y0 + 0.4, z), 0.4, 3.4);
+    this.refillPoints.push(new THREE.Vector3(x, y0, z));
   }
 
   /** Red fire hydrants on intersection corners (every other one). */
   private buildHydrants(): void {
-    const { roadMin, roadMax, roadStep, roadWidth } = WORLD;
+    const { roadMin, roadMax, roadStep } = WORLD;
     const geoBody = new THREE.CylinderGeometry(0.28, 0.32, 0.9, 8);
     const geoCap = new THREE.SphereGeometry(0.3, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2);
     for (let x = roadMin; x <= roadMax; x += roadStep) {
       for (let z = roadMin; z <= roadMax; z += roadStep) {
         if (((x - roadMin) / roadStep + (z - roadMin) / roadStep) % 2 !== 0) continue;
-        const off = roadWidth / 2 - 0.6; // on the sidewalk corner
-        const px = x + off;
-        const pz = z + off;
+        // on the sidewalk corner
+        const px = x + roadWidthX(x) / 2 - 0.6;
+        const pz = z + roadWidthZ(z) / 2 - 0.6;
         const body = new THREE.Mesh(geoBody, this.mat('#e63946'));
         body.position.set(px, 0.45, pz);
         body.castShadow = true;
@@ -868,15 +1029,16 @@ export class WorldMap {
     const tmp = new THREE.Object3D();
     this.treeSpots.forEach((p, i) => {
       const s = 0.8 + this.rand() * 0.6;
-      tmp.position.set(p.x, 1.2 * s, p.z);
+      const base = floorAt(p.x, p.z);
+      tmp.position.set(p.x, base + 1.2 * s, p.z);
       tmp.scale.setScalar(s);
       tmp.rotation.set(0, this.rand() * Math.PI, 0);
       tmp.updateMatrix();
       trunk.setMatrixAt(i, tmp.matrix);
-      tmp.position.y = 3.4 * s;
+      tmp.position.y = base + 3.4 * s;
       tmp.updateMatrix();
       crown.setMatrixAt(i, tmp.matrix);
-      this.physics.addStaticCylinder(new THREE.Vector3(p.x, 1.5 * s, p.z), 1.5 * s, 0.4 * s);
+      this.physics.addStaticCylinder(new THREE.Vector3(p.x, base + 1.5 * s, p.z), 1.5 * s, 0.4 * s);
     });
     this.scene.add(trunk, crown);
   }

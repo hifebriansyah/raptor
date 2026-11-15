@@ -15,3 +15,5 @@
   RewriteCond %{DOCUMENT_ROOT}/for-fun/raptor/dist/$1 -f
   RewriteRule ^(.+)$ dist/$1 [L]
 </IfModule>
+
+AddType application/manifest+json .webmanifest

@@ -21,6 +21,8 @@ export interface HumanoidLook {
  * facing +z. Animate with walk(speed) / wave() / panic() each frame.
  */
 export class Humanoid {
+  /** Big Head cheat. */
+  static bigHeads = false;
   readonly root = new THREE.Group();
   private readonly legL = new THREE.Group();
   private readonly legR = new THREE.Group();
@@ -80,6 +82,7 @@ export class Humanoid {
 
   /** Walk/run cycle; speed in m/s (0 = idle breathing). */
   walk(dt: number, speed: number): void {
+    this.head.scale.setScalar(Humanoid.bigHeads ? 1.9 : 1);
     this.phase += dt * (2 + speed * 2.4);
     const amp = Math.min(speed / 3, 1) * 0.8;
     const s = Math.sin(this.phase);
@@ -113,6 +116,17 @@ export class Humanoid {
     this.body.rotation.z = Math.sin(this.phase) * 0.12;
     this.armL.rotation.set(-0.3, 0, 0.9);
     this.armR.rotation.set(-0.3, 0, -0.9);
+  }
+
+  /** Seated (driving): thighs forward, shins down, hands on the wheel. */
+  sit(time = 0): void {
+    this.legL.rotation.set(-1.5, 0, 0.05);
+    this.legR.rotation.set(-1.5, 0, -0.05);
+    const s = Math.sin(time * 1.3) * 0.04;
+    this.armL.rotation.set(-1.15 + s, 0, 0.15);
+    this.armR.rotation.set(-1.15 - s, 0, -0.15);
+    this.body.position.y = 0.9;
+    this.body.rotation.set(0, 0, 0);
   }
 
   resetTilt(): void {

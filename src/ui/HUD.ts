@@ -11,9 +11,16 @@ import {
   Flame,
   FlaskConical,
   Bike,
+  TrainFront,
+  Clock,
+  Wand,
+  Megaphone,
+  Rabbit,
+  Maximize2,
+  Gem,
   Footprints,
-  Keyboard,
   MapPin,
+  Menu as MenuIcon,
   MousePointerClick,
   Plane,
   Search,
@@ -21,6 +28,9 @@ import {
   Sparkles,
   Volume2,
   VolumeX,
+  ZoomIn,
+  ZoomOut,
+  Scan,
   createElement,
   type IconNode,
 } from 'lucide';
@@ -42,7 +52,9 @@ const MODE_LABEL: Record<ControlMode, [IconNode, string]> = {
   raptorWalk: [Bot, 'Raptor · Walk'],
   raptorFlight: [Plane, 'Raptor · Flight'],
   raptorRace: [CarFront, 'Raptor · Race'],
-  raptorBoat: [Ship, 'Raptor · Boat'],
+  driveBoat: [Ship, 'Driving a boat'],
+  rideTrain: [TrainFront, 'On the city train'],
+  driveTrain: [TrainFront, 'Driving the train · W/S'],
   driveCar: [CarFront, 'Driving a car'],
   rideBike: [Bike, 'Riding a bicycle'],
   rideMotorbike: [Bike, 'Riding a motorbike'],
@@ -74,21 +86,27 @@ export class HUD {
   readonly minimapSlot = el('div', 'minimap');
   private readonly modeChip = el('div', 'chip mode');
   private readonly statusChip = el('div', 'chip status');
+  private readonly gunChip = el('div', 'chip gun');
   private readonly waterBar = el('div', 'fill water');
   private readonly thrusterBar = el('div', 'fill thruster');
   private readonly treatsBar = el('div', 'fill treats');
+  private readonly treatsLabel = el('span', 'gauge-label', 'Treats');
   private readonly points = el('div', 'points');
+  private readonly clock = el('div', 'clock');
   private readonly objectives = el('div', 'objectives');
   private readonly prompt = el('div', 'prompt');
   private readonly toast = el('div', 'toast');
   private readonly reticle = el('div', 'reticle', icon(Crosshair, 28));
   private readonly badge = el('div', 'badge');
   private readonly raceLine = el('div', 'race-line');
-  private readonly lookHint = el('div', 'look-hint', icon(MousePointerClick, 16), 'Click to look around · Esc frees the mouse');
+  private readonly lookHint = el('div', 'look-hint', icon(MousePointerClick, 16), 'Click to look around · Tab for the menu');
   private toastTimer = 0;
   private readonly soundBtn = el('button', 'icon-btn');
   private readonly musicBtn = el('button', 'icon-btn');
-  private readonly help = el('details', 'panel help');
+  /** HUD buttons (wired by the engine). */
+  onMenu: (() => void) | null = null;
+  onZoom: ((steps: number) => void) | null = null;
+  onZoomReset: (() => void) | null = null;
   private readonly lock = el('div', 'lock-marker');
 
   constructor(container: HTMLElement) {
@@ -100,22 +118,36 @@ export class HUD {
       'panel top-left',
       this.modeChip,
       this.statusChip,
+      this.gunChip,
       gauge(Droplets, 'Water', this.waterBar),
       gauge(Flame, 'Thruster', this.thrusterBar),
-      gauge(Cookie, 'Treats', this.treatsBar),
+      el('div', 'gauge', el('span', 'gauge-icon', icon(Cookie, 16)), this.treatsLabel, el('div', 'bar', this.treatsBar)),
       this.points,
+      this.clock,
     );
-
-    this.help.open = window.innerWidth > 900;
 
     this.soundBtn.title = 'Sound on/off';
     this.musicBtn.title = 'Music on/off (M)';
     this.soundBtn.addEventListener('click', () => gameStore.setState((st) => ({ soundOn: !st.soundOn })));
     this.musicBtn.addEventListener('click', () => gameStore.setState((st) => ({ musicOn: !st.musicOn })));
-    const toggles = el('div', 'audio-toggles', this.soundBtn, this.musicBtn);
-    this.renderHelp();
+    const button = (node: IconNode, title: string, run: () => void) => {
+      const b = el('button', 'icon-btn', icon(node, 18));
+      b.title = title;
+      b.addEventListener('click', run);
+      return b;
+    };
+    const toggles = el(
+      'div',
+      'audio-toggles',
+      button(ZoomIn, 'Zoom in (wheel, +)', () => this.onZoom?.(1.5)),
+      button(ZoomOut, 'Zoom out (wheel, −)', () => this.onZoom?.(-1.5)),
+      button(Scan, 'Reset zoom (middle-click, 0)', () => this.onZoomReset?.()),
+      this.soundBtn,
+      this.musicBtn,
+      button(MenuIcon, 'Menu (Tab, P)', () => this.onMenu?.()),
+    );
 
-    this.root.append(toggles, panel, this.help, this.lock, this.objectives, this.minimapSlot, this.raceLine, this.prompt, this.toast, this.reticle, this.badge, this.lookHint);
+    this.root.append(toggles, panel, this.lock, this.objectives, this.minimapSlot, this.raceLine, this.prompt, this.toast, this.reticle, this.badge, this.lookHint);
     container.append(this.root);
 
     gameStore.subscribe((s, prev) => this.render(s, prev));
@@ -128,34 +160,6 @@ export class HUD {
     if (!p) return;
     this.lock.style.transform = `translate(${p.x}px, ${p.y}px) translate(-50%, -50%)`;
     this.lock.classList.toggle('firing', p.firing);
-  }
-
-  private renderHelp(): void {
-    const rows = [
-      ['W A S D', 'Move (with the screen)'],
-      ['Mouse', 'Look around'],
-      ['Click', 'Spray (auto-aims)'],
-      ['Right-click', 'Hold to aim freely'],
-      ['Shift', 'Tap to run · boost'],
-      ['Space', 'Jump · climb (flight)'],
-      ['Space ×2', 'Walk: fly · Race/Boat: back to Walk'],
-      ['Ctrl / C', 'Descend (flight) · drift (race)'],
-      ['1 2 3 4 / Q', 'Walk · Flight · Race · Boat'],
-      ['V', 'Vehicle (Race) mode'],
-      ['B', 'Boat mode'],
-      ['E', 'Ride · drive · talk · use'],
-      ['R', 'Call the Raptor'],
-      ['F', 'Raptor follows you / stays'],
-      ['E (in the air)', 'Jump off with a parachute'],
-      ['A / D', 'Steer (race, vehicles)'],
-      ['H', 'Horn · bell'],
-      ['M', 'Music on/off'],
-      ['Gamepad', 'Supported'],
-    ];
-    this.help.replaceChildren(
-      el('summary', '', icon(Keyboard, 16), 'Controls'),
-      ...rows.map(([k, v]) => el('div', 'help-row', el('kbd', '', k), el('span', '', v))),
-    );
   }
 
   /** Per-frame bits that are not store-driven. */
@@ -174,9 +178,15 @@ export class HUD {
       this.musicBtn.classList.toggle('off', !s.musicOn || !s.soundOn);
       this.soundBtn.classList.toggle('off', !s.soundOn);
     }
-    if (!prev || s.control !== prev.control) {
+    if (!prev || s.gun !== prev.gun || s.control !== prev.control || s.goldBricks !== prev.goldBricks || s.bolts !== prev.bolts) {
+      const guns = { water: [Droplets, 'Water Gun'], size: [Maximize2, 'Shrink / Big Gun'], teleport: [Wand, 'Teleport Gun'], transform: [Rabbit, 'Transform Gun'], megaphone: [Megaphone, 'Megaphone Gun'] } as const;
+      const [node, text] = guns[s.gun];
+      this.gunChip.replaceChildren(icon(node, 15), `${text} · Z`, el('span', 'gun-extra', icon(Gem, 13), `${s.goldBricks.length}`, ' · ', `${s.bolts} bolts`));
+      this.gunChip.classList.toggle('hidden', s.control !== 'onFoot');
+    }
+    if (!prev || s.control !== prev.control || s.giant !== prev.giant) {
       const [node, text] = MODE_LABEL[s.control];
-      this.modeChip.replaceChildren(icon(node), text);
+      this.modeChip.replaceChildren(icon(node), s.giant && s.control === 'raptorWalk' ? 'Raptor · TITAN' : text);
       this.modeChip.classList.toggle('riding', s.control !== 'onFoot');
     }
     if (!prev || s.raptorStatus !== prev.raptorStatus) {
@@ -188,8 +198,14 @@ export class HUD {
     this.thrusterBar.style.width = `${s.thruster}%`;
     this.thrusterBar.classList.toggle('low', s.thrusterOverheat);
     this.treatsBar.style.width = `${s.treats}%`;
+    if (!prev || s.treatStock !== prev.treatStock) this.treatsLabel.textContent = `Treats ×${s.treatStock}`;
     this.waterBar.classList.toggle('low', s.water < 20);
 
+    if (!prev || Math.floor(s.clock * 6) !== Math.floor(prev.clock * 6)) {
+      const h = Math.floor(s.clock);
+      const m = Math.floor((s.clock - h) * 6) * 10;
+      this.clock.replaceChildren(icon(Clock, 14), `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+    }
     if (!prev || s.labPoints !== prev.labPoints) {
       this.points.replaceChildren(icon(Coins, 16), `${s.labPoints} Lab Points`);
       if (prev) {
@@ -214,7 +230,8 @@ export class HUD {
       this.toastTimer = 3.5;
     }
 
-    const modal = !!(s.dialogue || s.premonition || s.upgradeBenchOpen);
+    const modal = !!(s.dialogue || s.premonition || s.upgradeBenchOpen || s.menuOpen);
+    this.root.classList.toggle('menu-open', s.menuOpen);
     this.reticle.classList.toggle('show', s.aiming && !modal);
 
     let badge = '';

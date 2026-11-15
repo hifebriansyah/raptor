@@ -1,6 +1,7 @@
 import { MessageCircle, createElement } from 'lucide';
 import { gameStore, type DialogueLine } from '../state/gameStore';
 import { el } from './HUD';
+import { portraitFor } from './Portraits';
 
 /**
  * Conversation flow: open() a list of lines, advance() on E/Space. The store holds the current
@@ -44,7 +45,11 @@ export class DialogueController {
 const SPEAKER_COLOR: Record<string, string> = {
   Grandma: '#ff8fab',
   Leo: '#4cc9f0',
-  Mia: '#c77dff',
+  Max: '#06d6a0',
+  Gwen: '#81c784',
+  Sam: '#ffd166',
+  'Chief Bruno': '#7aa2ff',
+  Cora: '#ff6b6b',
   Professor: '#f7f9fc',
 };
 
@@ -54,11 +59,14 @@ export class DialogueBox {
   private readonly name = el('div', 'dialogue-name');
   private readonly text = el('div', 'dialogue-text');
   private readonly hint = el('div', 'dialogue-hint');
+  private readonly portrait = document.createElement('img');
   private typing: number | null = null;
 
   constructor(root: HTMLElement) {
     const head = el('div', 'dialogue-head', createElement(MessageCircle, { width: 16, height: 16, 'stroke-width': 2.4 }), this.name);
-    this.box.append(head, this.text, this.hint);
+    this.portrait.className = 'dialogue-portrait';
+    this.portrait.alt = '';
+    this.box.append(this.portrait, el('div', 'dialogue-main', head, this.text, this.hint));
     root.append(this.box);
     gameStore.subscribe((s, p) => {
       if (s.dialogue === p.dialogue) return;
@@ -66,6 +74,7 @@ export class DialogueBox {
       this.box.classList.toggle('show', !!d);
       if (!d) return;
       this.name.textContent = d.speaker;
+      this.portrait.src = portraitFor(d.speaker);
       this.box.style.setProperty('--speaker', SPEAKER_COLOR[d.speaker] ?? '#ffd166');
       this.hint.replaceChildren(el('kbd', '', 'E'), d.more ? ' Next' : ' Close');
       this.typeOut(d.text);

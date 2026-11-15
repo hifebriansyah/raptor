@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WORLD } from '../game/WorldMap';
+import { WORLD, roadWidthX, roadWidthZ } from '../game/WorldMap';
 
 export type TurnPolicy = 'random' | 'ring';
 
@@ -14,6 +14,8 @@ export class RoadAgent {
   dir = { x: 1, z: 0 };
   /** World position including the lane offset. */
   readonly world = new THREE.Vector3();
+  /** Cars: use the outer lane on the 4-lane boulevards. */
+  outer = false;
 
   constructor(
     public lane: number,
@@ -145,7 +147,11 @@ export class RoadAgent {
 
   private updateWorld(): void {
     const r = this.right;
-    this.world.set(this.centre.x + r.x * this.lane, 0, this.centre.z + r.z * this.lane);
+    // On a 4-lane boulevard the sidewalks are 4 m further out, and some cars take the outer lane
+    const wide = (this.dir.x !== 0 ? roadWidthZ(this.centre.z) : roadWidthX(this.centre.x)) > WORLD.roadWidth;
+    let lane = this.lane;
+    if (wide && (Math.abs(lane) >= 4 || this.outer)) lane += Math.sign(lane) * 4;
+    this.world.set(this.centre.x + r.x * lane, 0, this.centre.z + r.z * lane);
   }
 
   /** Distance travelled along the ring loop from the north-west corner (clockwise), 0…perimeter. */

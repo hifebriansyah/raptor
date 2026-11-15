@@ -15,15 +15,13 @@ const FLY_BOOST = 44;
 /** Race mode is at least 3× Walk mode: 42 m/s vs 13 walking; boost 66 = 3× the 22 m/s run. */
 const RACE_TOP = 42;
 const RACE_BOOST = 66;
-const BOAT_TOP = 30;
-const BOAT_BOOST = 46;
 /** Flight ceiling: high enough to reach space (it starts at ~300 m) and the floating islands. */
 const MAX_ALTITUDE = 900;
 /** Camera pitch that counts as "level" for flight (the camera's starting pitch). */
 const DEFAULT_CAM_PITCH = 0.32;
 
-export type RaptorMode = 'walk' | 'flight' | 'race' | 'boat';
-export const RAPTOR_MODES: RaptorMode[] = ['walk', 'flight', 'race', 'boat'];
+export type RaptorMode = 'walk' | 'flight' | 'race';
+export const RAPTOR_MODES: RaptorMode[] = ['walk', 'flight', 'race'];
 
 /** Things that happened this step, drained by the engine for sound and effects. */
 export type RaptorEvent = 'transform' | 'takeoff' | 'landed' | 'jump' | 'crash' | 'stomp' | 'wet' | 'impact';
@@ -145,6 +143,10 @@ export class MechaRaptor extends CharacterEntity {
       this.updateSummon(dt);
       return;
     }
+    if (this.escortTarget && !this.ridden) {
+      this.updateEscort(dt, this.escortTarget);
+      return;
+    }
     if (this.followTarget && !this.ridden) {
       this.updateFollow(dt, this.followTarget);
       return;
@@ -156,12 +158,29 @@ export class MechaRaptor extends CharacterEntity {
     this.home = null;
     if (this.mode === 'walk') this.updateWalk(dt, drive);
     else if (this.mode === 'flight') this.updateFlight(dt, drive);
-    else if (this.mode === 'race') this.updateRace(dt, drive);
-    else this.updateBoat(dt, drive);
-    // tell the engine when it wades into water in a land mode (hint: Boat mode)
+    else this.updateRace(dt, drive);
+    // tell the engine when it wades into deep water (hint: fly over it, or take a boat)
     const wet = this.depth > 0.8 && (this.mode === 'walk' || this.mode === 'race');
     if (wet && !this.wasWet) this.events.push('wet');
     this.wasWet = wet;
+  }
+
+  /** Where to fly alongside (the Professor's boat, with Follow on); set each step by the engine. */
+  escortTarget: THREE.Vector3 | null = null;
+
+  /** Fly beside a moving target, a few metres up, matching its speed. */
+  private updateEscort(dt: number, tgt: THREE.Vector3): void {
+    if (this.mode !== 'flight') this.setMode('flight');
+    this.beginStep();
+    const to = new THREE.Vector3(tgt.x - this.pos.x, tgt.y + 5 + this.footOffset - this.pos.y, tgt.z - this.pos.z);
+    const want = to.clone().multiplyScalar(2.2);
+    if (want.length() > 70) want.setLength(70);
+    const k = 1 - Math.exp(-3 * dt);
+    this.velocity.x += (want.x - this.velocity.x) * k;
+    this.velocity.z += (want.z - this.velocity.z) * k;
+    this.vy += (want.y - this.vy) * k;
+    this.integrate(dt, false);
+    if (Math.hypot(this.velocity.x, this.velocity.z) > 1.5) this.heading = dampAngle(this.heading, Math.atan2(this.velocity.x, this.velocity.z), 4, dt);
   }
 
   /** Feet position of whoever it is following (F), set by the engine each step; null = stay. */
@@ -232,9 +251,7 @@ export class MechaRaptor extends CharacterEntity {
   }
 
   private updateIdle(dt: number): void {
-    // left at sea in Boat mode it stays a floating boat; otherwise it folds back to walking
-    const afloat = this.mode === 'boat' && this.depth > 0.5;
-    if (this.mode !== 'walk' && !afloat) this.resetToWalk();
+    if (this.mode !== 'walk') this.resetToWalk();
     this.raceSpeed = 0;
     this.move(dt, new THREE.Vector3(), false);
   }
@@ -340,49 +357,11 @@ export class MechaRaptor extends CharacterEntity {
     }
   }
 
-  /** Over the sea in Flight or Boat mode it rides on the water surface instead of sinking. */
-  protected floorCentre(x: number, z: number): number {
-    const base = super.floorCentre(x, z);
-    if (this.mode === 'boat') return Math.max(base, WATER_Y + this.footOffset - 0.45);
+  /** Over the sea in Flight mode it skims the water surface instead of sinking. */
+  protected floorCentre(x: number, z: number, feetY = Infinity): number {
+    const base = super.floorCentre(x, z, feetY);
     if (this.mode === 'flight') return Math.max(base, WATER_Y + this.footOffset + 0.3);
     return base;
-  }
-
-  /**
-   * Boat mode: a jet-boat that planes over the sea. W/S throttle, A/D steer (drifty), Shift boosts
-   * on open water. On land it can only crawl.
-   */
-  private updateBoat(dt: number, d: RaptorDrive): void {
-    this.beginStep();
-    const a = d.input.moveAxis();
-    const onWater = this.depth > 0.5;
-    const boost = d.input.sprint && d.canBoost && a.z > 0.2 && onWater;
-    this.boosting = boost;
-    const top = onWater ? (boost ? BOAT_BOOST * d.boostMult : BOAT_TOP) * d.speedMult : 3.5;
-    const accel = onWater ? (boost ? 30 : 16) : 4;
-    if (a.z > 0) {
-      if (this.raceSpeed < top) this.raceSpeed += accel * a.z * dt;
-    } else if (a.z < 0) {
-      this.raceSpeed -= (this.raceSpeed > 0 ? 22 : 8) * -a.z * dt;
-      this.raceSpeed = Math.max(this.raceSpeed, -6);
-    } else this.raceSpeed *= Math.exp(-0.5 * dt);
-    if (this.raceSpeed > top) this.raceSpeed -= 12 * dt;
-
-    const grip = 0.35 + Math.min(Math.abs(this.raceSpeed) / 8, 1) * 0.65;
-    this.heading -= a.x * 1.8 * grip * Math.sign(this.raceSpeed || 1) * dt;
-    this.steerVis += (a.x - this.steerVis) * (1 - Math.exp(-6 * dt));
-
-    const fx = Math.sin(this.heading);
-    const fz = Math.cos(this.heading);
-    const k = 1 - Math.exp(-(onWater ? 2.2 : 6) * dt);
-    this.velocity.x += (fx * this.raceSpeed - this.velocity.x) * k;
-    this.velocity.z += (fz * this.raceSpeed - this.velocity.z) * k;
-    this.integrate(dt, true);
-    this.drifting = onWater && Math.abs(-this.velocity.x * fz + this.velocity.z * fx) > 4;
-    if (this.moveRatio < 0.35 && Math.abs(this.raceSpeed) > 10) {
-      this.raceSpeed *= 0.4;
-      this.events.push('crash');
-    }
   }
 
   private updateRace(dt: number, d: RaptorDrive): void {
@@ -464,7 +443,7 @@ export class MechaRaptor extends CharacterEntity {
 
     this.wFlight += ((this.mode === 'flight' ? 1 : 0) - this.wFlight) * ease(5);
     this.wRace += ((this.mode === 'race' ? 1 : 0) - this.wRace) * ease(5);
-    this.wBoat += ((this.mode === 'boat' ? 1 : 0) - this.wBoat) * ease(5);
+    this.wBoat = 0; // the boat hull is unused since sea boats replaced Boat mode
     const wB = this.wBoat;
     const wF = this.wFlight;
     const wR = this.wRace;

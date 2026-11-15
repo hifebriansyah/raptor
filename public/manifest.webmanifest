@@ -1,0 +1,17 @@
+{
+  "name": "Mecha Raptor",
+  "short_name": "Raptor",
+  "description": "A toybox open-world town with a homemade dino-mech that flies all the way to space.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#1b2a49",
+  "theme_color": "#8fd3ff",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

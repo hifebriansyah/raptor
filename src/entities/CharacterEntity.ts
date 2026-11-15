@@ -120,7 +120,7 @@ export abstract class CharacterEntity {
     const wasGrounded = this.grounded;
     this.grounded = controller.computedGrounded();
     const t0 = body.translation();
-    const floor = this.floorCentre(t0.x + m.x, t0.z + m.z); // capsule centre when standing on the floor
+    const floor = this.floorCentre(t0.x + m.x, t0.z + m.z, t0.y - this.footOffset + 0.5); // capsule centre when standing on the floor
     let onFloor = false;
     if (t0.y + m.y <= floor + 1e-3) {
       m.y = floor - t0.y;
@@ -156,18 +156,26 @@ export abstract class CharacterEntity {
    * Lowest the capsule centre may go at (x, z): standing on the ground or sea floor. Swimmers and
    * boats raise this to float at the water surface.
    */
-  protected floorCentre(x: number, z: number): number {
-    return floorAt(x, z) + this.footOffset;
+  protected floorCentre(x: number, z: number, feetY = Infinity): number {
+    return floorAt(x, z, feetY) + this.footOffset;
   }
 
   /** Water depth where this character stands (0 on land). */
   get depth(): number {
-    return waterDepth(this.pos.x, this.pos.z);
+    return waterDepth(this.pos.x, this.pos.z, this.pos.y);
   }
 
   /** Stand still but keep gravity working (used while idle/parked). */
   protected settle(dt: number): void {
     this.move(dt, new THREE.Vector3(), false);
+  }
+
+  /** Carry along by `d` (standing on a moving train roof) without resetting motion. */
+  nudge(d: THREE.Vector3): void {
+    this.pos.add(d);
+    this.prev.add(d);
+    this.char.body.setTranslation(this.pos, true);
+    this.char.body.setNextKinematicTranslation(this.pos);
   }
 
   /** Instantly move to a capsule-centre position (no sweep). */

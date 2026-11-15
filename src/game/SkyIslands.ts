@@ -18,7 +18,8 @@ const SKY = new THREE.Color('#bfe3ff');
 const SPACE = new THREE.Color('#04050d');
 /** Camera height above which stars, planet and space islands are drawn / below which the land is no longer drawn. */
 const SPACE_SHOW = 190;
-const LAND_HIDE = 400;
+/** Cloud Isle is hidden above this (the town itself thins out by distance, see GameEngine.cullLand). */
+const LAND_HIDE = 700;
 
 /**
  * Up, up and away: a sky that fades to black with stars and a ringed planet as you
@@ -191,6 +192,25 @@ export class SkyIslands {
       flag.position.set(-4.9, 3.3, 5);
       g.add(flag);
     }
+  }
+
+  /** A small domed Moon Base on Moon Rock (enterable); returns its door (feet position). */
+  buildMoonBase(): THREE.Vector3 {
+    const isl = this.islands.find((i) => i.name === 'Moon Rock')!;
+    const g = new THREE.Group();
+    g.position.set(isl.x - 10, isl.y, isl.z - 6);
+    g.add(part(new THREE.CylinderGeometry(7, 7, 4, 20), '#ced4da', 0, 2, 0));
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(7, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshLambertMaterial({ color: '#e9ecef', flatShading: true }));
+    dome.position.y = 4;
+    g.add(dome);
+    g.add(part(new THREE.BoxGeometry(2.2, 2.8, 2), '#adb5bd', 0, 1.4, 7.4));
+    g.add(part(new THREE.BoxGeometry(1.4, 2.4, 0.1), '#1b2a49', 0, 1.2, 8.42, true));
+    g.add(part(new THREE.CylinderGeometry(0.08, 0.08, 6, 6), '#adb5bd', 4, 9, 0));
+    g.add(part(new THREE.BoxGeometry(2.4, 1.4, 0.05), '#e63946', 5.2, 11, 0)); // a flag
+    this.scene.add(g);
+    this.spaceRoots.push(g);
+    this.physics.addStaticCylinder(new THREE.Vector3(g.position.x, isl.y + 4, g.position.z), 4, 7);
+    return new THREE.Vector3(g.position.x, isl.y, g.position.z + 9.2);
   }
 
   /** True if this scene child belongs to the sky layers (so GameEngine does not treat it as land). */

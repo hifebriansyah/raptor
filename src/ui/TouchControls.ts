@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, Droplets, Hand, Repeat, Zap, createElement, type IconNode } from 'lucide';
+import { ArrowDown, ArrowUp, Droplets, Hand, HandFist, Menu, Repeat, Wand, Zap, createElement, type IconNode } from 'lucide';
 import type { InputManager } from '../game/InputManager';
 import { el } from './HUD';
 
@@ -77,6 +77,9 @@ export class TouchControls {
     button('Boost', Zap, 'Boost');
     button('Down', ArrowDown, 'Down');
     button('Mode', Repeat, 'Mode');
+    button('Punch', HandFist, 'Punch');
+    button('Gun', Wand, 'Gun');
+    button('Menu', Menu, 'Menu');
     layer.append(pad);
 
     // Camera look: drag on the right half of the screen

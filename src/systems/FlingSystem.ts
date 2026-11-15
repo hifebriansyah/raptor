@@ -62,7 +62,7 @@ export class FlingSystem {
       f.rot.x += f.spin.x * dt;
       f.rot.y += f.spin.y * dt;
       f.rot.z += f.spin.z * dt;
-      const floor = surfaceAt(f.pos.x, f.pos.z) + f.rest;
+      const floor = surfaceAt(f.pos.x, f.pos.z, f.pos.y) + f.rest;
       if (f.pos.y <= floor && f.vel.y < 0) {
         f.pos.y = floor;
         const hard = f.vel.y < -6;

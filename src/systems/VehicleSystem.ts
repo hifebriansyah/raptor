@@ -1,11 +1,13 @@
 import * as THREE from 'three';
+import { BOAT_LABEL, BOAT_TOP, CAR_SPECS, buildBoatModel, buildCarModel, flashBeacons, removeDriver, seatDriver, type BoatModel, type CarModel, type VehicleModel } from '../entities/CarModels';
 import { CharacterEntity, part } from '../entities/CharacterEntity';
 import type { InputManager } from '../game/InputManager';
-import { WORLD } from '../game/WorldMap';
+import { PALM_ISLE, WATER_Y } from '../game/Terrain';
+import { WORLD, roadWidthX, roadWidthZ } from '../game/WorldMap';
 import type { PhysicsSystem } from './PhysicsSystem';
-import { buildCar, type Car } from './TrafficSystem';
+import type { Car } from './TrafficSystem';
 
-export type VehicleKind = 'car' | 'bike' | 'motorbike';
+export type VehicleKind = 'car' | 'bike' | 'motorbike' | 'boat';
 
 interface Tuning {
   radius: number;
@@ -25,9 +27,10 @@ const TUNING: Record<VehicleKind, Tuning> = {
   car: { radius: 1.0, halfHeight: 0.25, maxStep: 0.45, top: 24, sprintTop: 30, accel: 13, reverse: 9, steer: 1.9, traction: 6.5, wheelRadius: 0.38 },
   bike: { radius: 0.4, halfHeight: 0.45, maxStep: 0.3, top: 9, sprintTop: 13, accel: 5, reverse: 3, steer: 2.7, traction: 9, wheelRadius: 0.35 },
   motorbike: { radius: 0.5, halfHeight: 0.45, maxStep: 0.35, top: 28, sprintTop: 36, accel: 16, reverse: 4, steer: 2.3, traction: 7, wheelRadius: 0.4 },
+  boat: { radius: 1.2, halfHeight: 0.1, maxStep: 0.2, top: 30, sprintTop: 40, accel: 14, reverse: 6, steer: 1.6, traction: 2.2, wheelRadius: 1 },
 };
 
-export const VEHICLE_LABEL: Record<VehicleKind, string> = { car: 'car', bike: 'bicycle', motorbike: 'motorbike' };
+export const VEHICLE_LABEL: Record<VehicleKind, string> = { car: 'car', bike: 'bicycle', motorbike: 'motorbike', boat: 'boat' };
 
 /**
  * A vehicle the Professor can take: a car (taken from traffic), a bicycle or a motorbike.
@@ -40,8 +43,16 @@ export class Vehicle extends CharacterEntity {
   flung = false;
   speed = 0;
   readonly events: ('crash' | 'hop')[] = [];
-  /** Where the Professor sits (bikes); cars hide him. */
-  readonly seat = new THREE.Object3D();
+  /** Where the Professor sits (bikes: on the saddle; cars and boats: in the driver's seat). */
+  seat = new THREE.Object3D();
+  /** Glass-cabin model for cars and boats (with an AI driver while it is traffic). */
+  model: VehicleModel | null = null;
+  carModel: CarModel | null = null;
+  boatModel: BoatModel | null = null;
+  /** AI boats: their cruising loop (null for parked / player vehicles). */
+  route: THREE.Vector3[] | null = null;
+  private routeIndex = 0;
+  private time = 0;
   private readonly body = new THREE.Group();
   private wheels: THREE.Object3D[] = [];
   private fork: THREE.Object3D | null = null;
@@ -59,10 +70,19 @@ export class Vehicle extends CharacterEntity {
     readonly kind: VehicleKind,
     feet: THREE.Vector3,
     heading: number,
-    carMesh?: { group: THREE.Group; wheels: THREE.Object3D[] },
-    color?: string,
+    opts: { model?: VehicleModel; carModel?: CarModel; boatModel?: BoatModel; color?: string } = {},
   ) {
-    const t = TUNING[kind];
+    const base = TUNING[kind];
+    const t: Tuning = { ...base };
+    if (kind === 'car') {
+      const spec = CAR_SPECS[opts.carModel ?? 'sedan'];
+      Object.assign(t, { top: spec.top, sprintTop: spec.sprintTop, accel: spec.accel, steer: spec.steer });
+    }
+    if (kind === 'boat') {
+      const [top, sprintTop] = BOAT_TOP[opts.boatModel ?? 'speedboat'];
+      Object.assign(t, { top, sprintTop, accel: top * 0.5, steer: opts.boatModel === 'yacht' ? 1.0 : 1.6 });
+    }
+    const color = opts.color;
     const centre = feet.clone().setY(feet.y + t.halfHeight + t.radius + 0.1);
     super(physics, physics.createCharacter({ position: centre, radius: t.radius, halfHeight: t.halfHeight, maxStep: t.maxStep }), {
       accel: 0,
@@ -72,15 +92,20 @@ export class Vehicle extends CharacterEntity {
     });
     this.tuning2 = t;
     this.stolen = kind === 'car';
+    if (kind === 'boat') this.resting = false; // let it settle onto the water first
     this.heading = heading;
     this.teleport(centre, heading);
     this.group.add(this.body);
-    if (kind === 'car') {
-      const mesh = carMesh ?? buildCar(color ?? '#e76f51', false);
-      mesh.group.position.set(0, 0, 0);
-      mesh.group.rotation.set(0, 0, 0);
-      this.body.add(mesh.group);
-      this.wheels = mesh.wheels;
+    if (kind === 'car' || kind === 'boat') {
+      this.carModel = kind === 'car' ? (opts.carModel ?? 'sedan') : null;
+      this.boatModel = kind === 'boat' ? (opts.boatModel ?? 'speedboat') : null;
+      const m = opts.model ?? (kind === 'car' ? buildCarModel(this.carModel!, color ?? '#e76f51') : buildBoatModel(this.boatModel!, color ?? '#ffffff'));
+      m.group.position.set(0, 0, 0);
+      m.group.rotation.set(0, 0, 0);
+      this.body.add(m.group);
+      this.wheels = m.wheels;
+      this.model = m;
+      this.seat = m.driverSeat;
     } else if (kind === 'bike') this.buildBike(color ?? '#ef476f');
     else this.buildMotorbike(color ?? '#1d3557');
   }
@@ -89,17 +114,45 @@ export class Vehicle extends CharacterEntity {
     return !this.resting;
   }
 
+  /** "car", "fire truck", "speedboat"… */
+  get label(): string {
+    if (this.carModel) return CAR_SPECS[this.carModel].label;
+    if (this.boatModel) return BOAT_LABEL[this.boatModel];
+    return VEHICLE_LABEL[this.kind];
+  }
+
+  /** Boats float on the sea (and beach in the shallows). */
+  protected floorCentre(x: number, z: number, feetY = Infinity): number {
+    const base = super.floorCentre(x, z, feetY);
+    return this.kind === 'boat' ? Math.max(base, WATER_Y - 0.05 + this.footOffset) : base;
+  }
+
+  /** The AI skipper takes the boat round its loop. */
+  cruise(dt: number): void {
+    if (!this.route) return;
+    const tgt = this.route[this.routeIndex];
+    const to = new THREE.Vector3(tgt.x - this.pos.x, 0, tgt.z - this.pos.z);
+    if (to.length() < 14) this.routeIndex = (this.routeIndex + 1) % this.route.length;
+    let diff = Math.atan2(to.x, to.z) - this.heading;
+    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+    this.driveCore(dt, Math.abs(diff) > 1.2 ? 0.4 : 0.75, THREE.MathUtils.clamp(-diff * 2, -1, 1), false, false, false, 1);
+  }
+
   /** One physics step while the Professor drives. */
   drive(dt: number, input: InputManager, speedMult: number): void {
+    const a = input.moveAxis();
+    this.driveCore(dt, a.z, a.x, input.sprint, this.kind === 'car' && input.ascend, input.jump, speedMult);
+  }
+
+  private driveCore(dt: number, throttle: number, steer: number, sprint: boolean, handbrake: boolean, jump: boolean, speedMult: number): void {
     this.resting = false;
     this.beginStep();
+    this.time += dt;
     const t = this.tuning2;
-    const a = input.moveAxis();
-    const throttle = a.z;
-    const steer = a.x;
-    const handbrake = this.kind === 'car' && input.ascend;
-    const wet = this.depth > 0.5; // wheels in the sea: barely moving
-    const top = (input.sprint ? t.sprintTop : t.top) * speedMult * (wet ? 0.25 : 1);
+    // wheels in the sea barely move; a boat on land only scrapes along
+    const wet = this.kind === 'boat' ? this.depth < 0.5 : this.depth > 0.5;
+    const top = (sprint ? t.sprintTop : t.top) * speedMult * (wet ? (this.kind === 'boat' ? 0.08 : 0.25) : 1);
+    if (this.kind === 'boat') this.grounded = true; // afloat: always has "grip" on the water
 
     if (this.grounded) {
       if (throttle > 0) {
@@ -110,7 +163,7 @@ export class Vehicle extends CharacterEntity {
       } else this.speed *= Math.exp(-(this.kind === 'bike' ? 0.6 : 0.8) * dt);
       if (handbrake) this.speed *= Math.exp(-0.6 * dt);
       if (this.speed > top) this.speed -= 10 * dt;
-      if (this.kind !== 'car' && input.jump) {
+      if ((this.kind === 'bike' || this.kind === 'motorbike') && jump) {
         this.vy = this.kind === 'bike' ? 5 : 6;
         this.events.push('hop');
       }
@@ -131,6 +184,11 @@ export class Vehicle extends CharacterEntity {
     if (this.moveRatio < 0.35 && Math.abs(this.speed) > 7) {
       this.speed *= 0.3;
       this.events.push('crash');
+    }
+    if (this.kind === 'boat') {
+      // bob on the waves and lift the bow at speed
+      this.body.position.y = Math.sin(this.time * 2.4) * 0.06;
+      this.body.rotation.x = -Math.min(Math.abs(this.speed) / 40, 1) * 0.12;
     }
   }
 
@@ -164,7 +222,10 @@ export class Vehicle extends CharacterEntity {
     }
     if (this.fork) this.fork.rotation.y = -this.steerVis * 0.5;
     if (this.crank) this.crank.rotation.x = this.spin * 0.45;
-    if (this.kind !== 'car') {
+    if (this.model) flashBeacons(this.model, performance.now() / 1000);
+    if (this.kind === 'boat') {
+      this.body.rotation.z = THREE.MathUtils.clamp(this.steerVis * Math.abs(this.speed) * 0.006, -0.12, 0.12);
+    } else if (this.kind !== 'car') {
       // lean into turns while riding; rest on the kickstand when parked
       const want = this.driven ? THREE.MathUtils.clamp(-this.steerVis * Math.min(1, Math.abs(this.speed) / 6) * 0.45, -0.5, 0.5) : 0.14;
       this.lean += (want - this.lean) * (1 - Math.exp(-6 * dt));
@@ -271,24 +332,27 @@ export class VehicleSystem {
     landmarks: { lab: { x: number; z: number }; grandma: { x: number; z: number } },
   ) {
     const { lab, grandma } = landmarks;
-    this.add(new Vehicle(physics, 'bike', new THREE.Vector3(lab.x + 13, 0, lab.z + 13), Math.PI / 2, undefined, '#ffd166'));
-    this.add(new Vehicle(physics, 'motorbike', new THREE.Vector3(lab.x - 12, 0, lab.z + 13), -Math.PI / 2, undefined, '#e63946'));
-    this.add(new Vehicle(physics, 'bike', new THREE.Vector3(grandma.x - 11, 0, grandma.z + 12), 0.4, undefined, '#ff8fab'));
+    this.add(new Vehicle(physics, 'bike', new THREE.Vector3(lab.x + 13, 0, lab.z + 13), Math.PI / 2, { color: '#ffd166' }));
+    this.add(new Vehicle(physics, 'motorbike', new THREE.Vector3(lab.x - 12, 0, lab.z + 13), -Math.PI / 2, { color: '#e63946' }));
+    this.add(new Vehicle(physics, 'bike', new THREE.Vector3(grandma.x - 11, 0, grandma.z + 12), 0.4, { color: '#ff8fab' }));
+    // A speedboat tied up at each pier
+    this.add(new Vehicle(physics, 'boat', new THREE.Vector3(296, 0, 72), Math.PI / 2, { boatModel: 'speedboat', color: '#e63946' }));
+    this.add(new Vehicle(physics, 'boat', new THREE.Vector3(PALM_ISLE.x - PALM_ISLE.r - 16, 0, PALM_ISLE.z + 20), -Math.PI / 2, { boatModel: 'speedboat', color: '#118ab2' }));
 
     // Parked along sidewalks around town
-    const { roadMin, roadMax, roadStep, roadWidth } = WORLD;
+    const { roadMin, roadMax, roadStep } = WORLD;
     const rand = mulberry32(777);
-    const kerb = roadWidth / 2 - 0.6;
     for (let i = 0; i < 16; i++) {
       const road = roadMin + Math.floor(rand() * ((roadMax - roadMin) / roadStep + 1)) * roadStep;
       const along = roadMin + roadStep / 2 + Math.floor(rand() * ((roadMax - roadMin) / roadStep)) * roadStep + (rand() - 0.5) * 30;
       const side = rand() < 0.5 ? -1 : 1;
       const alongX = rand() < 0.5;
+      const kerb = (alongX ? roadWidthZ(road) : roadWidthX(road)) / 2 - 0.6;
       const pos = alongX ? new THREE.Vector3(along, 0, road + side * kerb) : new THREE.Vector3(road + side * kerb, 0, along);
       const heading = alongX ? Math.PI / 2 + (rand() < 0.5 ? 0 : Math.PI) : rand() < 0.5 ? 0 : Math.PI;
       const moto = i % 3 === 0;
       const colors = moto ? MOTO_COLORS : BIKE_COLORS;
-      this.add(new Vehicle(physics, moto ? 'motorbike' : 'bike', pos, heading, undefined, colors[Math.floor(rand() * colors.length)]));
+      this.add(new Vehicle(physics, moto ? 'motorbike' : 'bike', pos, heading, { color: colors[Math.floor(rand() * colors.length)] }));
     }
   }
 
@@ -298,10 +362,66 @@ export class VehicleSystem {
     return v;
   }
 
-  /** Turn a traffic car into a drivable car (its driver is handled by the caller). */
+  /** Turn a traffic car into a drivable car (its driver jumps out: the caller adds a fleeing pedestrian). */
   fromTraffic(car: Car): Vehicle {
-    const v = new Vehicle(this.physics, 'car', car.agent.world.clone(), car.agent.heading, { group: car.mesh, wheels: car.wheels });
+    removeDriver(car.model);
+    const v = new Vehicle(this.physics, 'car', car.agent.world.clone(), car.agent.heading, { model: car.model, carModel: car.kind });
     return this.add(v);
+  }
+
+  // ───────────────────────────────────────────── sea traffic
+
+  private boatTarget = 6;
+
+  /** Crowd setting: how many AI boats cruise the coast. */
+  setBoats(n: number): void {
+    this.boatTarget = n;
+    const ai = this.vehicles.filter((v) => v.route && !v.driven);
+    while (ai.length < n) ai.push(this.spawnBoat(ai.length));
+    while (ai.length > n) this.remove(ai.pop()!);
+  }
+
+  private spawnBoat(i: number): Vehicle {
+    const models: BoatModel[] = ['speedboat', 'fishing', 'yacht', 'coastguard'];
+    const colors = ['#ffffff', '#e63946', '#118ab2', '#ffd166', '#06d6a0', '#f77f00'];
+    const model = models[i % models.length];
+    // two loops: around Palm Isle, and up and down the channel off the town's east coast
+    const route: THREE.Vector3[] = [];
+    if (i % 2 === 0) {
+      const r = PALM_ISLE.r + 14 + (i % 3) * 2;
+      const dir = i % 4 === 0 ? 1 : -1;
+      for (let k = 0; k < 12; k++) {
+        const a = (dir * k * Math.PI * 2) / 12;
+        route.push(new THREE.Vector3(PALM_ISLE.x + Math.cos(a) * r, 0, PALM_ISLE.z + Math.sin(a) * r));
+      }
+    } else {
+      const x = 302 + (i % 3) * 8;
+      route.push(new THREE.Vector3(x, 0, -250), new THREE.Vector3(x + 20, 0, -80), new THREE.Vector3(x, 0, 90), new THREE.Vector3(x + 15, 0, 250), new THREE.Vector3(x + 40, 0, 120), new THREE.Vector3(x + 45, 0, -150));
+    }
+    const start = Math.floor(Math.random() * route.length);
+    const p = route[start];
+    const next = route[(start + 1) % route.length];
+    const v = new Vehicle(this.physics, 'boat', p.clone().setY(WATER_Y), Math.atan2(next.x - p.x, next.z - p.z), { boatModel: model, color: colors[i % colors.length] });
+    v.route = route;
+    v['routeIndex'] = (start + 1) % route.length;
+    seatDriver(v.model!);
+    return this.add(v);
+  }
+
+  /** The Professor takes an AI boat: the skipper dives overboard. */
+  takeBoat(v: Vehicle): THREE.Vector3 {
+    v.route = null;
+    if (v.model) removeDriver(v.model);
+    const splash = v.localToWorld(new THREE.Vector3(3, 0, 0));
+    // keep the sea busy: a replacement boat appears elsewhere
+    setTimeout(() => this.setBoats(this.boatTarget), 8000);
+    return splash;
+  }
+
+  private remove(v: Vehicle): void {
+    this.scene.remove(v.group);
+    this.physics.world.removeRigidBody(v.char.body);
+    this.vehicles.splice(this.vehicles.indexOf(v), 1);
   }
 
   /** Closest vehicle within reach of a point (feet), not currently driven. */
@@ -312,8 +432,8 @@ export class VehicleSystem {
       if (v.driven) continue;
       const f = v.feet;
       const d = Math.hypot(f.x - feet.x, f.z - feet.z);
-      const reach = v.kind === 'car' ? 3.4 : 2.0;
-      if (d < reach && Math.abs(f.y - feet.y) < 2 && d < bestD) {
+      const reach = v.kind === 'car' ? 3.4 : v.kind === 'boat' ? 5 : 2.0;
+      if (d < reach && Math.abs(f.y - feet.y) < (v.kind === 'boat' ? 3.5 : 2) && d < bestD) {
         best = v;
         bestD = d;
       }
@@ -322,7 +442,11 @@ export class VehicleSystem {
   }
 
   update(dt: number): void {
-    for (const v of this.vehicles) if (!v.driven && !v.flung) v.idle(dt);
+    for (const v of this.vehicles) {
+      if (v.driven || v.flung) continue;
+      if (v.route) v.cruise(dt);
+      else v.idle(dt);
+    }
   }
 
   /** Parked/abandoned vehicles within `radius` of `pos`. */
@@ -353,17 +477,15 @@ export class VehicleSystem {
 
   /** Keep only a few taken cars around: remove the farthest abandoned one. */
   prune(player: THREE.Vector3): void {
-    const cars = this.vehicles.filter((v) => v.stolen && !v.driven);
+    const cars = this.vehicles.filter((v) => v.stolen && !v.driven && !v.route);
     if (cars.length <= MAX_PARKED_CARS) return;
     const far = cars.reduce((a, b) => (a.pos.distanceToSquared(player) > b.pos.distanceToSquared(player) ? a : b));
-    this.scene.remove(far.group);
-    this.physics.world.removeRigidBody(far.char.body);
-    this.vehicles.splice(this.vehicles.indexOf(far), 1);
+    this.remove(far);
   }
 
   /** For traffic and pedestrians: where vehicles are. */
   obstacles(): { pos: THREE.Vector3; radius: number }[] {
-    return this.vehicles.map((v) => ({ pos: v.pos, radius: v.kind === 'car' ? 2 : 0.7 }));
+    return this.vehicles.filter((v) => v.kind !== 'boat').map((v) => ({ pos: v.pos, radius: v.kind === 'car' ? 2 : 0.7 }));
   }
 }
 

@@ -7,7 +7,7 @@ import type { WaterSystem, WaterTarget } from './WaterSystem';
 
 type Mood = 'stroll' | 'panic' | 'soaked' | 'wave' | 'cheer';
 
-interface Walker {
+export interface Walker {
   agent: RoadAgent;
   body: Humanoid;
   speed: number;
@@ -38,6 +38,8 @@ export interface PedestrianContext {
   threats: Threat[];
   professorPos: THREE.Vector3;
   professorOnFoot: boolean;
+  /** Solid bodies people are shoved aside by (the Professor, the Raptor, driven vehicles). */
+  solids?: { pos: THREE.Vector3; radius: number }[];
 }
 
 /**
@@ -121,8 +123,33 @@ export class PedestrianSystem {
     }
   }
 
+  private target = 40;
+
   private get baseCount(): number {
-    return 40;
+    return this.target;
+  }
+
+  /** Crowd density option: add strollers out of sight, or drop the farthest ones. */
+  setCount(n: number, player: THREE.Vector3): void {
+    this.target = n;
+    const sidewalk = WORLD.roadWidth / 2 - 0.8;
+    let guard = 0;
+    while (this.walkers.length < n && guard++ < 200) {
+      const agent = new RoadAgent(Math.random() < 0.5 ? sidewalk : -sidewalk, 'random');
+      for (let t = 0; t < 10; t++) {
+        agent.placeRandom();
+        if (agent.world.distanceTo(player) > 60) break;
+      }
+      this.spawn(agent, agent.world.clone(), 'stroll');
+    }
+    while (this.walkers.length > n) {
+      const idle = this.walkers.filter((w) => !w.flung);
+      if (!idle.length) break;
+      const far = idle.reduce((a, b) => (a.pos.distanceToSquared(player) > b.pos.distanceToSquared(player) ? a : b));
+      this.scene.remove(far.body.root);
+      this.water.targets.delete(far.target);
+      this.walkers.splice(this.walkers.indexOf(far), 1);
+    }
   }
 
   /** Obstacles for the traffic system (people standing in the road). */
@@ -167,6 +194,23 @@ export class PedestrianSystem {
     }
   }
 
+  /** Panic for a while (costumes, size changes, a kick up the bum). */
+  frighten(w: Walker, seconds: number, push?: THREE.Vector3): void {
+    w.mood = 'panic';
+    w.moodTime = seconds;
+    if (push) {
+      w.push.add(push);
+      if (w.push.length() > 7) w.push.setLength(7);
+    }
+  }
+
+  /** Teleport someone a little way off (Teleport Gun on a passer-by). */
+  relocate(w: Walker): void {
+    w.agent.placeRandom();
+    w.pos.copy(w.agent.world);
+    w.push.set(0, 0, 0);
+  }
+
   cheer(pos: THREE.Vector3, radius: number): void {
     for (const w of this.walkers) {
       if (w.pos.distanceTo(pos) < radius && w.mood === 'stroll') {
@@ -190,6 +234,29 @@ export class PedestrianSystem {
         else away.set(1, 0, 0);
         w.push.addScaledVector(away, 7 * dt);
         if (w.push.length() > 7) w.push.setLength(7);
+      }
+      // Bumped into: shoved out of the way (never walked through)
+      for (const b of ctx.solids ?? []) {
+        let dx = w.pos.x - b.pos.x;
+        let dz = w.pos.z - b.pos.z;
+        let d = Math.hypot(dx, dz);
+        const min = b.radius + 0.45;
+        if (d >= min || Math.abs(w.pos.y - (b.pos.y - 1)) > 3) continue;
+        if (d < 1e-3) {
+          dx = 1;
+          dz = 0;
+          d = 1;
+        }
+        const k = (min - d) / d;
+        w.pos.x += dx * k;
+        w.pos.z += dz * k;
+        w.push.x += dx * k;
+        w.push.z += dz * k;
+        if (w.push.length() > 7) w.push.setLength(7);
+        if (w.mood === 'stroll' || w.mood === 'wave') {
+          w.mood = 'panic';
+          w.moodTime = 0.8;
+        }
       }
       const dProf = Math.hypot(w.pos.x - ctx.professorPos.x, w.pos.z - ctx.professorPos.z);
       if (ctx.professorOnFoot && dProf < 3.5 && w.mood === 'stroll' && Math.random() < dt * 0.6) {

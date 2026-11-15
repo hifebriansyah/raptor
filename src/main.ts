@@ -1,12 +1,14 @@
 import './ui/hud.css';
 import { GameEngine } from './game/GameEngine';
 import { gameStore, loadSave, startAutoSave } from './state/gameStore';
+import { setupInstall } from './ui/install';
 
 const app = document.getElementById('app')!;
 const loading = document.getElementById('loading');
 
 loadSave();
 startAutoSave();
+setupInstall();
 
 GameEngine.create(app)
   .then((game) => {

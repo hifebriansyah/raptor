@@ -1,6 +1,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
-import { dampAngle, part } from '../entities/CharacterEntity';
+import { CAR_SPECS, buildCarModel, flashBeacons, seatDriver, type CarModel, type VehicleModel } from '../entities/CarModels';
+import { dampAngle } from '../entities/CharacterEntity';
 import type { PhysicsSystem } from './PhysicsSystem';
 import { RoadAgent } from './RoadAgent';
 
@@ -21,6 +22,32 @@ export interface Car {
   honk: number;
   /** Thrown through the air (the FlingSystem moves the mesh meanwhile). */
   flung: boolean;
+  /** Which kind of vehicle (sedan, bus, police car…) and its model (glass cabin, driver). */
+  kind: CarModel;
+  model: VehicleModel;
+}
+
+/** Traffic mix (weights). Rivals always drive sports cars. */
+const MIX: [CarModel, number][] = [
+  ['sedan', 38],
+  ['van', 12],
+  ['roadster', 10],
+  ['police', 9],
+  ['bus', 8],
+  ['racecar', 6],
+  ['firetruck', 6],
+  ['sports', 6],
+];
+const MODEL_COLOR: Partial<Record<CarModel, string>> = { police: '#1d3557', firetruck: '#d62828', bus: '#f4a300' };
+
+function pickModel(): CarModel {
+  const total = MIX.reduce((a, [, w]) => a + w, 0);
+  let r = Math.random() * total;
+  for (const [m, w] of MIX) {
+    r -= w;
+    if (r <= 0) return m;
+  }
+  return 'sedan';
 }
 
 const CAR_COLORS = ['#e76f51', '#f4a261', '#e9c46a', '#2a9d8f', '#457b9d', '#a8dadc', '#ffffff', '#6d6875', '#b5838d', '#90be6d'];
@@ -59,7 +86,12 @@ export class TrafficSystem {
     return this.cars.filter((c) => c.rival);
   }
 
-  private readonly ambientTarget = 18;
+  private ambientTarget = 18;
+
+  /** Crowd density option: how many ambient cars to keep on the roads. */
+  setAmbient(n: number): void {
+    this.ambientTarget = n;
+  }
   private refillTimer = 0;
 
   /** Cars (rivals too) within `radius` of `pos`, not already flying. */
@@ -81,6 +113,7 @@ export class TrafficSystem {
     car.heading = car.agent.heading;
     car.mesh.position.copy(car.vis);
     car.mesh.rotation.set(0, car.heading, 0);
+    car.model.driver?.sit();
     car.body.setTranslation({ x: car.vis.x, y: 0.75, z: car.vis.z }, true);
     car.body.setEnabled(true);
     car.flung = false;
@@ -113,13 +146,24 @@ export class TrafficSystem {
   refill(dt: number, player: THREE.Vector3): void {
     this.refillTimer -= dt;
     if (this.refillTimer > 0) return;
-    this.refillTimer = 3;
-    if (this.cars.filter((c) => !c.rival).length >= this.ambientTarget) return;
+    this.refillTimer = 1.5;
+    const ambient = this.cars.filter((c) => !c.rival && !c.flung);
+    if (ambient.length > this.ambientTarget) {
+      // too many for the crowd setting: drop one the player can't see
+      const far = ambient.reduce((a, b) => (a.agent.world.distanceToSquared(player) > b.agent.world.distanceToSquared(player) ? a : b));
+      if (far.agent.world.distanceTo(player) > 90) {
+        this.take(far);
+        this.scene.remove(far.mesh);
+      }
+      return;
+    }
+    if (ambient.length >= this.ambientTarget) return;
     this.spawn(false, CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)], 'car', player);
   }
 
   private spawn(rival: boolean, color: string, name: string, awayFrom?: THREE.Vector3): void {
     const agent = new RoadAgent(2.5, rival ? 'ring' : 'random');
+    agent.outer = !rival && Math.random() < 0.5;
     // keep cars apart at spawn (and out of the player's sight when refilling)
     for (let tries = 0; tries < 30; tries++) {
       agent.placeRandom();
@@ -127,13 +171,17 @@ export class TrafficSystem {
       const hidden = !awayFrom || agent.world.distanceTo(awayFrom) > 140;
       if (clear && hidden) break;
     }
-    const { group, wheels } = buildCar(color, rival);
+    const kind: CarModel = rival ? 'sports' : pickModel();
+    const spec = CAR_SPECS[kind];
+    const model = buildCarModel(kind, MODEL_COLOR[kind] ?? color);
+    seatDriver(model);
+    const { group, wheels } = model;
     this.scene.add(group);
     const body = this.physics.world.createRigidBody(
       RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(agent.world.x, 0.75, agent.world.z),
     );
-    this.physics.world.createCollider(RAPIER.ColliderDesc.cuboid(1.0, 0.75, 2.1), body);
-    const cruise = rival ? 24 : 9 + Math.random() * 4;
+    this.physics.world.createCollider(RAPIER.ColliderDesc.cuboid(spec.half[0], kind === 'bus' || kind === 'firetruck' ? 1.4 : 0.75, spec.half[1]), body);
+    const cruise = rival ? 24 : spec.cruise[0] + Math.random() * (spec.cruise[1] - spec.cruise[0]);
     this.cars.push({
       agent,
       mesh: group,
@@ -148,6 +196,8 @@ export class TrafficSystem {
       targetSpeed: null,
       honk: 0,
       flung: false,
+      kind,
+      model,
     });
   }
 
@@ -172,7 +222,7 @@ export class TrafficSystem {
         if (ahead > 0 && ahead < 16 && side < 1.6 + r) blocked = Math.min(blocked, ahead - r);
       };
       for (const o of obstacles) check(o.pos, o.radius);
-      for (const other of this.cars) if (other !== car && !other.flung) check(other.agent.world, 2.2);
+      for (const other of this.cars) if (other !== car && !other.flung) check(other.agent.world, CAR_SPECS[other.kind].half[1] + 0.2);
 
       let target = want;
       if (blocked < 14) target = Math.min(target, Math.max(0, (blocked - 4) * 1.2));
@@ -205,36 +255,10 @@ export class TrafficSystem {
       car.mesh.position.copy(car.vis);
       car.mesh.rotation.y = car.heading;
       for (const wh of car.wheels) wh.rotation.x += (car.speed / 0.38) * dt;
+      flashBeacons(car.model, this.time);
     }
+    this.time += dt;
   }
-}
 
-export function buildCar(color: string, sporty: boolean): { group: THREE.Group; wheels: THREE.Object3D[] } {
-  const g = new THREE.Group();
-  const wheels: THREE.Object3D[] = [];
-  const bodyH = sporty ? 0.65 : 0.8;
-  g.add(part(new THREE.BoxGeometry(2, bodyH, 4.2), color, 0, 0.35 + bodyH / 2, 0));
-  const cabinW = sporty ? 1.6 : 1.75;
-  const cabinH = sporty ? 0.55 : 0.75;
-  g.add(part(new THREE.BoxGeometry(cabinW, cabinH, sporty ? 1.8 : 2.2), color, 0, 0.35 + bodyH + cabinH / 2, -0.25));
-  g.add(part(new THREE.BoxGeometry(cabinW + 0.04, cabinH * 0.7, sporty ? 1.5 : 1.9), '#2b3a55', 0, 0.35 + bodyH + cabinH / 2, -0.25));
-  // lights
-  for (const sx of [-0.65, 0.65]) {
-    g.add(part(new THREE.BoxGeometry(0.4, 0.18, 0.05), '#fff8d6', sx, 0.35 + bodyH * 0.6, 2.11, true));
-    g.add(part(new THREE.BoxGeometry(0.4, 0.15, 0.05), '#ff3b3b', sx, 0.35 + bodyH * 0.6, -2.11, true));
-  }
-  if (sporty) {
-    g.add(part(new THREE.BoxGeometry(0.4, bodyH + 0.02, 4.22), '#ffffff', 0, 0.35 + bodyH / 2, 0)); // racing stripe
-    g.add(part(new THREE.BoxGeometry(1.9, 0.1, 0.5), '#222222', 0, 0.35 + bodyH + 0.45, -1.9)); // spoiler
-    for (const sx of [-0.7, 0.7]) g.add(part(new THREE.BoxGeometry(0.1, 0.4, 0.1), '#222222', sx, 0.35 + bodyH + 0.2, -1.9));
-  }
-  for (const [wx, wz] of [[-1, 1.35], [1, 1.35], [-1, -1.35], [1, -1.35]] as const) {
-    const w = new THREE.Group();
-    w.position.set(wx, 0.38, wz);
-    w.add(part(new THREE.CylinderGeometry(0.38, 0.38, 0.3, 10).rotateZ(Math.PI / 2), '#222222'));
-    w.add(part(new THREE.BoxGeometry(0.32, 0.14, 0.14), '#bbbbbb'));
-    wheels.push(w);
-    g.add(w);
-  }
-  return { group: g, wheels };
+  private time = 0;
 }

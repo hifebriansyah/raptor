@@ -10,6 +10,8 @@ export interface FollowSettings {
   recenterRate?: number;
   /** Over-the-shoulder offset (metres to the right, up) so the reticle clears the character. */
   shoulder?: { right: number; up: number };
+  /** Allowed zoom factor range (default 0.45–2.2; indoors is tighter). */
+  zoomRange?: [number, number];
 }
 
 const SENSITIVITY = 0.0028;
@@ -26,6 +28,9 @@ export class CameraRig {
   private distance = 6;
   private idle = 0;
   private readonly shoulder = new THREE.Vector2();
+  /** Player zoom: multiplies the follow distance (1 = default). */
+  zoom = 1;
+  private zoomEased = 1;
   /** Camera shake strength (m), decays quickly. */
   private shakeAmt = 0;
 
@@ -35,6 +40,13 @@ export class CameraRig {
   }
 
   constructor(readonly camera: THREE.PerspectiveCamera) {}
+
+  /** Zoom by steps (+ closer, − further), or reset to the default distance. */
+  applyZoom(req: { steps: number; reset: boolean }): void {
+    if (req.reset) this.zoom = 1;
+    if (req.steps) this.zoom *= Math.pow(0.88, req.steps);
+    this.zoom = THREE.MathUtils.clamp(this.zoom, 0.3, 2.5);
+  }
 
   update(
     dt: number,
@@ -63,7 +75,10 @@ export class CameraRig {
       Math.sin(this.pitch),
       Math.cos(this.yaw) * Math.cos(this.pitch),
     );
-    const wanted = settings.distance;
+    const [zMin, zMax] = settings.zoomRange ?? [0.45, 2.2];
+    const z = THREE.MathUtils.clamp(this.zoom, zMin, zMax);
+    this.zoomEased += (z - this.zoomEased) * (1 - Math.exp(-8 * dt));
+    const wanted = settings.distance * this.zoomEased;
     const desired = focus.clone().addScaledVector(offset, wanted);
     const free = Math.max(1.2, physics.rayDistance(focus, desired, ignore) - 0.35);
     // Snap in quickly when something blocks the view, ease back out slowly.
@@ -81,7 +96,7 @@ export class CameraRig {
     const shift = right.multiplyScalar(this.shoulder.x).add(new THREE.Vector3(0, this.shoulder.y, 0));
 
     this.camera.position.copy(focus).addScaledVector(offset, this.distance).add(shift);
-    const minY = surfaceAt(this.camera.position.x, this.camera.position.z) + 0.4;
+    const minY = surfaceAt(this.camera.position.x, this.camera.position.z, focus.y) + 0.4;
     if (this.camera.position.y < minY) this.camera.position.y = minY;
     this.camera.lookAt(focus.clone().add(shift));
     if (this.shakeAmt > 0.005) {

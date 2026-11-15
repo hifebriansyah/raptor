@@ -1,114 +1,156 @@
-# Mecha Raptor — Next-Gen Master Plan (Godot 4 / LEGO City–Style Open World)
+# Mecha Raptor — Game Design & Technical Plan (Three.js)
 
-> **Premise & Core DNA:** Rebuild and expand the Three.js prototype into a full **Godot 4** open-world sandbox modelled after **LEGO City Undercover**—bright, colourful toy-brick city architecture, multi-height districts, elevated train, roaming vehicles & boats, Super Builds, and enterable buildings—while keeping the prototype's signature ability to fly all the way up into **Space**. You are an **eccentric 36-year-old Professor** having fun in town with his homemade **Mecha Raptor**—putting out fires, fighting thugs and zapping them to jail with a Teleport Gun, riding trains, and exploring buildings whenever you feel like it.
+> **Premise:** A bright, toy-like open-world sandbox for the web, built with **Three.js + TypeScript**. You are an eccentric **36-year-old Professor** having fun in town with his homemade **Mecha Raptor**: putting out fires, racing rivals, chasing thieves, sailing to Palm Isle and flying all the way up into **Space**. The long-term direction is a **LEGO City Undercover–style** town (colourful toy-brick districts, a train, enterable landmarks, Super Builds), grown step by step on the existing browser game.
 
----
-
-## 1. Engine Shift: Moving to Godot 4
-
-- **Why Godot 4:** Replaces the Three.js + Rapier prototype for smoother streaming/LOD transitions (land-to-space without culling pops), native multi-scene/sub-scene loading for enterable buildings, sculpted multi-height terrain, built-in `CharacterBody3D` / `VehicleBody3D` / Jolt physics, `AnimationTree` (combo combat, freefall pose, Hulkbuster assembly), and clean 2D UI + dialogue portrait support.
-- **Prototype Reference:** The current Three.js codebase (`src/`) serves as the playable prototype & gameplay reference for tuning speeds, modes, fires, races, and events.
+**Engine decision:** stay on **Three.js + Rapier in the browser**. A Godot 4 rewrite was considered and dropped: the web game already runs everywhere with a small download, deploys to GitHub Pages (raptor.situs.id) without special headers, and every planned feature below fits the current stack.
 
 ---
 
-## 2. Characters, Lore & Routines
+## 1. Design Pillars
 
-| Character | Updated Lore | Behaviour & Routine |
+- **Toybox joy first:** switching between walking, flying, racing, boating and spraying water feels snappy and rewarding.
+- **Living little town:** a compact, readable GTA-style map where emergent events (fires, races, break-ins) happen around you.
+- **Charming personality:** the Raptor is a companion, not just a vehicle: it sniffs around, follows you, sneaks off for cookies and can be stolen.
+- **Up to space:** vertical flight from the streets to floating islands above the clouds stays the signature move.
+- **Grow in playable slices:** every phase ships a playable build to raptor.situs.id; big ideas start as one small, working example before they spread across the map.
+
+---
+
+## 2. Tech Stack (as built)
+
+- **Build:** Vite 7 + TypeScript 5.9 (strict). `npm run dev` (port 5195), `npm run build`, `npm run build:local` (base `/for-fun/raptor/` for Apache at http://localhost/for-fun/raptor/).
+- **Rendering:** `three` 0.187, flat-shaded low-poly materials, sun shadows (PCF), hemisphere light, merged/instanced geometry for town blocks.
+- **Physics:** `@dimforge/rapier3d-compat` kinematic character controllers. No ground collider: `game/Terrain.ts` defines the floor and characters are clamped to it by hand (fixes sinking/tripping seen with cuboid and heightfield grounds).
+- **Loop:** fixed 60 Hz simulation, interpolated rendering.
+- **State & UI:** vanilla DOM + `zustand/vanilla`, **Lucide** icons, procedural Web Audio (no audio files), progress saved in `localStorage`.
+- **Deploy:** GitHub Actions builds the Vite site to GitHub Pages at raptor.situs.id (`CNAME` copied into `dist/`).
+- **Installs:** the default npm registry on this machine is a private one with an expired token; install with `npm ci --registry=https://registry.npmjs.org`.
+
+### Code map
+```text
+src/
+├── main.ts                 # entry: load save, start engine
+├── game/                   # GameEngine, InputManager, CameraRig, Terrain, WorldMap, SkyIslands, EventDirector
+├── entities/               # CharacterEntity, Professor, MechaRaptor, Humanoid, NPCManager, FireHazard
+├── systems/                # Physics, Particles, Water, Traffic, Pedestrians, Vehicles, Race, Mystery, Fling, Audio, RoadAgent
+├── state/gameStore.ts      # modes, resources, objectives, dialogue, save
+└── ui/                     # HUD, Minimap, DialogueBox, PremonitionModal, UpgradeBench, TouchControls
+```
+
+---
+
+## 3. Characters
+
+| Character | Before phases 5–10 | Now (built) |
 | --- | --- | --- |
-| **The Professor** | **36 years old** — energetic young inventor & eccentric dad just having fun with his creations. | Walks, sprints, punches/kicks in combos, uses 5 Lab Guns, skydives, drives/rides vehicles & boats, mounts the Raptor. |
-| **Prof's Wife** | Playful partner who **loves wearing a goofy Godzilla costume** (like the LEGO T-Rex mascot suit, face peeking out the dino mouth). | Stomps cheerfully around town/park/Lab on her daily routine, playfully roars at pedestrians, cheers on the Raptor (and becomes a hilarious giant kaiju if zapped with the Big Gun!). |
-| **Mecha Raptor** | Homemade multi-mode companion (`Walk`, `Flight`, `Race`, plus **Hulkbuster Giant Mode** — *Boat mode removed*). | Sniffs around when idle, follows on foot or **flies alongside when you ride a sea boat**, can be abducted **anywhere** if left behind. |
-| **Two Sons (Ages 9 & 11)** | The Professor's two energetic kids (replacing the old "grandchildren" lore). | Follow daily routines (school/park/arcade/Grandma's yard), drop gossip/clues, and challenge you to mini-games. |
-| **Grandma (Prof's Mother)** | Actually the **Professor's mother**—he calls her "Grandma" out of habit because his 9- and 11-year-old sons call her Grandma. | Daily routine (kitchen/porch/market/garden); bakes cookies/treats, gives **Premonitions** when the Raptor goes missing. |
-| **Named Town NPCs** | Shopkeepers, Train Conductor, Rival Racers, Police Chief, etc. | Follow time-of-day routines (home → work → park/café). |
+| **The Professor** | Walks, runs (tap Shift), swims, jumps 2 m, rides the Raptor, takes cars/bikes/motorbikes, parachutes. | 36 years old; punch/kick combos, 5 Lab Guns, skydive pose. |
+| **Mecha Raptor** | Walk, Flight, Race, Boat modes; water gun; follows, can be called, stolen or lured to the attic. | Hulkbuster Giant Mode; flies alongside when the Professor sails a boat. |
+| **Grandma** | Bakes cookies, gives Premonitions when the Raptor is missing. | Becomes the Professor's mother (he calls her "Grandma" because his sons do); daily routine. |
+| **Leo & Mia** | Grandchildren in Grandma's yard with hints. | Replaced by the Professor's **two sons (9 and 11)** with routines and mini-games. |
+| **Prof's Wife** | — | Wears a goofy Godzilla costume, stomps around town, roars at pedestrians, cheers on the Raptor. |
+| **Town NPCs** | ~40 pedestrians, 18 traffic cars, 3 rival racers, thieves. | Named shopkeepers, train conductor, police chief with time-of-day routines. |
 
-- **Character & NPC Art Style (No Minifigures):** Characters and NPCs do **not** use LEGO minifigure proportions (no cylinder heads, claw hands, or stiff brick legs). Instead, they use a clean **stylized low-poly human look** with natural proportions and articulated joints (head, torso, arms, hands, legs, feet, hair, coats/costumes) so punch/kick combos, skydiving, sitting in cars, and the Wife's Godzilla mascot suit animate fluidly.
-- **2D Dialogue Portraits:** Every named NPC interaction displays a **2D character portrait frame** (using placeholder images now, ready to swap in custom 2D art later).
-
----
-
-## 3. Prototype Bugs & Core Changes to Fix
-
-Every known issue from the Three.js build is addressed directly in the Godot design:
-
-1. **Smooth Land ↔ Space Transition:** Replace the hard 190 m / 400 m altitude culling pop with continuous atmospheric sky/star shader blending, gradual distance fog, and smooth Godot LOD / impostors for the city below.
-2. **Real Raptor ↔ Vehicle & NPC Collisions:** Raptor, traffic vehicles, and NPCs have proper solid collision layers—normal bumps push, stop, or knock cleanly instead of ghosting through each other (while Turbo Ram / Megaphone Gun still fling them).
-3. **Meaningful Treats / Cookies:** Give treats real gameplay purpose—feed the Raptor for instant thruster/stamina refill, on-demand **Sugar Rush**, healing/happiness, or toss treats as a distraction/lure (and keeping treats stocked prevents attic cookie raids).
-4. **Meteor Fall = Raptor Only:** The Professor falling alone **never** triggers a blazing meteor fall. Only the **Mecha Raptor** (solo or with Professor riding) builds up into a fiery meteor impact.
-5. **Parachute Cancel & LEGO 2 Skydive Pose:** Pressing `Space` while parachuting **removes/detaches the parachute** and switches the Professor into a **LEGO Marvel 2–style spread-eagle freefall pose** (press `Space` again to re-deploy before landing).
-6. **Abduction Anywhere:** Thieves can snatch the Mecha Raptor **anywhere you leave it behind** around the world—not only when parked at the Lab.
-7. **Proper Building-to-Character Scale:** Re-proportion doorways (~2.4–2.8 m), storey heights (~3.5–4 m), sidewalks, vehicles, and towers to match the Professor (1.75 m) and Mecha Raptor naturally.
-8. **4-Lane Boulevards & 2-Lane Streets:** Keep residential/side roads at 2 lanes and widen main city avenues / ring highway stretches into **4-lane roads**.
-9. **Remove Raptor Boat Mode + Fly-Along Support:** Remove `Boat` mode from the Mecha Raptor. Instead, **ambient boats roam the sea** (boardable/drivable like GTA vehicles), and if Follow (`F`) is active while the Professor sails a boat, the Raptor **follows in Flight mode**.
-10. **Transparent Car Glass & Visible Drivers:** Replace opaque car cabs/windows with **transparent windshields & side windows**, an interior seat/steering wheel, and a **visible driver** inside (traffic NPCs sit inside their cars, and the **Professor is visibly seated inside** while driving instead of hidden).
-11. **Camera Zoom In / Out / Reset:** Smoothly zoom the third-person camera closer or further away (mouse wheel / `+` `-` or pad bindings, clamped cleanly indoors vs. outdoors vs. Hulkbuster Giant Mode), plus a one-press **Reset Camera Zoom** button (e.g. middle-click / dedicated key).
+- **Art style:** stylised low-poly humans with natural proportions (no minifigure cylinder heads or claw hands).
+- **Dialogue portraits:** 2D portrait frame per named NPC (placeholder images first).
 
 ---
 
-## 4. World Structure & Core Pillars
+## 4. Current Game (as built)
 
-1. **LEGO City–Style Main Menu, World Design & Settings:** Bright, colourful LEGO City–inspired world & level design (vibrant modular buildings, clear district landmarks, interactive build pads) paired with stylized non-minifigure characters, a live 3D flyover of the living city + **New Game**, **Continue**, **Options** (**Crowdness / Population Density** — Low / Medium / High / Packed scaling pedestrians, road traffic & sea boats — plus **Shading / Visual Quality** presets: Flat Low-Poly, Toon/Cel, and High with soft shadows, SSAO & glow), and **Extras / Cheats**.
-2. **Multi-Height LEGO City Districts:** Sculpted hills, stepped city districts (*Downtown*, *Suburbs & Lab*, *Uptown / Observatory Hill*, *Harbour & Beach*, *Park*, and *Palm Isle*), coastal cliffs, sunken park basin, and a raised lighthouse hill—connected by sloped 2-lane/4-lane roads, bridges, tunnels, and viaducts.
-3. **Every Building Is Enterable (Separate Scene/Map Loads):**
-   - Walk up to any door (suburban houses, downtown towers, cafés, shops, banks, Police Station Holding Jail, Lab, train stations, lighthouse, pirate shack) and press `E` to iris-wipe load into an isolated Godot interior scene, then return to your exact exterior spot (with Raptor waiting outside, or inside huge hangar/hub interiors).
-   - Tall towers feature internal elevators/stairs with **rooftop exits** for skydiving and Gold Bricks.
-   - **Two Tiers:** Handcrafted landmarks (Lab + Teleport Hub, Police Station Jail showing captured thugs, Bank Vault, Lighthouse, Space/Moon Base) + deterministic seeded interior archetypes for every town building.
-4. **LEGO City Train & Stations:** Elevated viaduct loop circling the city (plus optional Palm Isle sea rail bridge Super Build) with 4–5 enterable stations and a live multi-car train you can board, ride on the roof, drive from the cab, or defend from thugs.
-5. **Quick Travel & Teleport Hub:**
-   - Physical **Teleport Hub** wing in the Lab with glowing portals to every district/island (Town, Downtown, Uptown Hill, Palm Isle, Cloud Isle, Space Base) plus a 100% progress & Extras wall.
-   - Discoverable **Teleport Pads** across districts, islands, and orbit for instant map quick-travel.
-6. **Sky & Space Layer (Above the City):** Keep the prototype's signature vertical flight up past Cloud Isle into the 300 m+ Space zone (moon gravity, stars, ringed planet, floating space islands, and an enterable **Moon/Space Base**).
-
----
-
-## 5. Gameplay, Vehicles, Combat & Toys
-
-### A. Giant Mode ("Hulkbuster" Drop-Pod Assembly)
-- No sudden scale-up pop: activating **Giant Mode** calls down oversized **armour & mech modules** from the sky/Lab (chest rig, heavy gauntlets, leg boosters, back cannons) that fly in and **lock/combine onto the Mecha Raptor** piece by piece into a **Hulkbuster-style Titan Mecha Raptor**—built for smashing heavy barriers, tossing trucks, and brawling giant monsters.
-
-### B. Professor Melee Combo & 5 Eccentric Lab Guns
-- **Punch & Kick Combo:** 3–4 hit ground chain (*Jab → Hook → Spinning Kick → Knockback Finisher*), mid-air **Flying Kick / Ground Slam**, and sprint **Dropkick / Shoulder Bash** to shatter props and stun thugs.
-- **The 5 Lab Guns (On-Foot Gadget Wheel):**
-  1. **Shrink / Normal / Big Gun:** Cycles targets between tiny, normal, and giant (NPCs, vehicles, props, blockers, or giant monsters).
-  2. **Teleport Gun:** Healthy thugs evade it effortlessly; beat a thug to **low health** first, then zap them straight into the **Police Station Holding Jail** (where you can visit them behind bars!).
-  3. **Water Gun:** Puts out small fires, splashes NPCs, cools hazards, waters plants, and shorts out bots.
-  4. **Transform Gun (Animal Costume Ray):** Turns NPCs or thugs into goofy **animal costumes** (chicken, frog, mini-dino, penguin, duck) flapping/hopping around in panic.
-  5. **Megaphone Gun (Sonic Blast):** Launches vehicles, bikes, NPCs, thugs, and loose props flying through the air.
-
-### C. Expanded Vehicles & Roaming Boats
-- **Road Variety & Visible Interiors:** Sedans, **race cars**, **roadsters**, **city buses**, **fire trucks**, police cruisers, vans, motorbikes, and bicycles—all with distinct speed, mass, and handling, plus **transparent glass windows** so you can see the AI driver or the **Professor** seated at the wheel.
-- **Sea Traffic:** Roaming **AI boats** (speedboats, fishing boats, yachts, coastguard) cruising around the town coast and Palm Isle—swim or fly up and board/take them over, while the Raptor flies beside you if Follow is on.
-- **Vehicle Call-In Pads:** Unlockable rides summoned via Vehicle Tokens at roadside/harbour pads.
-
-### D. Smashable World, Collectibles & Cheats
-- **Destructible Props & Bolts/Studs:** Indoors and outdoors shatter into magnetic Bolts with a Hero/Multiplier bar.
-- **Gold Bricks, Red/Pink Bricks & Super Builds:** Unlock **Cheat Mode** toggles (**Unlimited Turbo**, **Unlimited Water**, Bolt Magnet, Big Head, Confetti Water, etc.) plus permanent Super Builds (Palm Isle bridge, mega-ramps, Space launch pad).
-- **Optional Sandbox Scenarios:** Burning buildings, rival races, Raptor abductions anywhere, runaway train events, meteor crashes, and optional **Giant Monster / Rogue Mech** encounters (great excuse to deploy Hulkbuster Giant Mode!).
+- **Steering (LEGO-style only):** move relative to the screen; the water gun auto-locks onto the nearest fire or thief in front of you; hold right-click (or K) to aim freely. Race mode and vehicles steer like cars.
+- **Running:** tap Shift once to run (Borderlands-style) until you stop, free-aim or tap again.
+- **Modes:** `1`–`3` or `Q` cycle Walk/Flight/Race; `V` Race; double-tap Space returns to Walk from Race, and takes off into Flight when in the air. (Boat mode was replaced by real boats in Phase 6.)
+- **Jumps:** Professor 2 m, Raptor 6 m, Raptor running jump 12 m. Heavy landings make a shockwave that flings nearby cars and people.
+- **Speeds:** Raptor walk 13 / run 22, flight 24 / boost 44, race 42 / boost 66 m/s (see README for the full table).
+- **Thruster:** auto-refills after a short pause, overheats when empty until 30 %, 3× more efficient in Race mode. Turbo ramming flings vehicles and pedestrians.
+- **Vehicles (GTA-style):** E takes a traffic car (driver runs off), bicycles and motorbikes are parked around town; at most 5 taken cars stay around.
+- **Water & Palm Isle:** real sea with a shallow shelf; the Professor swims, vehicles wade; Palm Isle has palms, huts, a lighthouse, piers and the pirate-shack hideout.
+- **Sky & space:** sky fades to space above ~300 m with stars and a ringed planet, moon gravity, 900 m ceiling, four floating islands with discovery bonuses. Clouds removed.
+- **Calling & following:** `R` calls the Raptor (warps in when stranded far away or in space), `F` toggles follow on foot.
+- **Parachute:** getting off high in the air opens it; falling from a space island opens it on re-entry. Sink rate eases with height.
+- **Events:** one fire at a time (150 s), one-lap rival races with 8 gates, the missing-Raptor mystery (theft with Grandma's premonition vs. cookie run to the attic).
+- **Economy:** Lab Points spent at the Lab upgrade bench (Turbo Thrusters, Bigger Water Tank, Lab Security Alarm, Cookie Dispenser; 3 levels each).
+- **Input:** keyboard + mouse, gamepad, on-screen touch controls; `M` music.
 
 ---
 
-## 6. Godot 4 Phased Roadmap
+## 5. Roadmap
 
-### Phase 1 — Godot Core, Scale, Terrain & Menu Foundation
-- [x] Set up Godot 4 project structure, input actions (keyboard/mouse/gamepad/touch), and **LEGO City–style 3D Main Menu** + **Options** (including **Shading** presets & graphics settings)
-- [x] Build **multi-height sculpted terrain** (hills, terraces, 2-lane & 4-lane roads, bridges, Palm Isle hill) with **proper character-to-building scale**
-- [x] Implement **Professor** (36 yo model, walk/sprint, parachute + `Space`-to-cut **LEGO 2 skydive pose**) and **Mecha Raptor** (`Walk`, `Flight`, `Race` — no Boat mode, meteor fall **only** on Raptor, real vehicle/NPC collisions) + **Camera Zoom In / Out / Reset**
-- [x] Smooth **Land ↔ Space** sky/fog/LOD transition + Cloud Isle & Space islands
+Earlier phases 1–4 (sandbox MVP; flight, race and water gun; fires, Grandma, mystery; polish and upgrades) and all the follow-up features in section 4 are done.
 
-### Phase 2 — Living City, Boats, Routines & Enterable Interiors
-- [x] Add **road vehicle variety** (race car, roadster, bus, fire truck, police car, bikes) with **transparent glass & visible drivers** + **roaming sea boats** (with Raptor fly-along follow) + **Crowdness** density setting (pedestrians, traffic & boats)
-- [x] Add **named NPC daily routines** (Prof's wife in her Godzilla costume, two sons ages 9 & 11, Prof's mother "Grandma", citizens) + **2D portrait placeholder dialogue UI**
-- [ ] Build Godot **Interior Scene Switcher** (iris wipe, doorstep & tower rooftop exits) + door triggers on every building
-- [ ] Build **Lab Inside**, **Teleport Hub**, **Police Station Holding Jail**, and initial seeded building archetypes
-- [ ] Implement **District Teleport Pads** + Map Quick-Travel
+### Phase 5 — Controls, Menu & Camera
+- [x] **Arrow keys** turn/tilt the camera exactly like the mouse (WASD stays for movement)
+- [x] **Camera zoom** in/out (mouse wheel, `+`/`-`, pad) with a one-press **reset** (middle-click / key), clamped per mode
+- [x] **Menu** on `Tab` + a Lucide menu icon button in the HUD corner (avoids the Esc / pointer-lock clash): Continue, New Game, Options, Controls
+- [x] Move the **key bindings** list from the live HUD into the menu
+- [x] **Options:** crowd density (Low / Medium / High / Packed: pedestrians, traffic, boats) and visual quality (Flat, Toon, High with soft shadows + bloom)
+- [x] **Install** button: PWA manifest + service worker + `beforeinstallprompt`, with a hint when already installed
 
-### Phase 3 — Combat, 5 Lab Guns, Hulkbuster Giant Mode & Abductions
-- [ ] Implement Professor **punch & kick combo** + **5-Gun Gadget Wheel** (Size, Teleport-to-Jail, Water, Transform Costume, Megaphone)
-- [ ] Implement **Hulkbuster Giant Mode** (flying drop-pod armour parts combining onto the Mecha Raptor)
-- [ ] Rework **Treats** (useful buffs/lures/prevent raids) and **Raptor abduction anywhere** when left behind
-- [ ] Add **Cheat Mode / Extras** menu (**Unlimited Turbo**, **Unlimited Water**, mutators)
+### Phase 6 — Fixes & Core Changes
+- [x] **Smooth land ↔ space:** replace the altitude culling pop with gradual fog, sky/star blending and fading LOD for the town
+- [x] **Solid collisions:** Rapier colliders for traffic, parked vehicles and pedestrians so normal bumps push or stop instead of ghosting (turbo ram and blasts still fling)
+- [x] **Meteor fall only for the Raptor:** the Professor falling alone never becomes a blazing meteor
+- [x] **Parachute cut:** Space while parachuting drops the canopy into a spread-eagle skydive pose; Space again re-opens it
+- [x] **Useful treats:** feed the Raptor for instant thruster refill or a Sugar Rush, throw treats as a lure, keeping it fed prevents attic raids
+- [x] **Abduction anywhere:** thieves can take the Raptor wherever it is left behind, not only at the Lab
+- [x] **Raptor Boat mode → sea boats:** replace Raptor Boat mode with drivable ambient boats; with Follow on, the Raptor flies alongside
+- [x] **See-through cars:** transparent windows, seats and wheel, visible drivers, and the Professor seated visibly while driving
 
-### Phase 4 — LEGO City Train, Smashables & Sandbox Events
-- [ ] Build elevated rail viaduct, **enterable Train Stations**, and live multi-car drivable **City Train**
-- [ ] Add destructible props + magnetic **Bolts/Studs**, **Gold/Red Bricks**, and **Super Build** pads
-- [ ] Port/expand **fires**, **rival races**, **Space Moon Base**, and optional **Giant Monster / Kaiju** encounters
+### Phase 7 — Living City
+- [x] **Scale pass:** doors ~2.4–2.8 m, storeys ~3.5–4 m, sidewalks and vehicles matched to the Professor (1.75 m) and Raptor
+- [x] **4-lane boulevards** for main avenues and the ring road, 2-lane side streets
+- [x] **Multi-height districts:** Downtown, Suburbs & Lab, Uptown / Observatory Hill, Harbour & Beach, Park, Palm Isle (hills, slopes, bridges, a tunnel) — extend `Terrain.floorAt` with height layers
+- [x] **Vehicle variety:** race car, roadster, bus, fire truck, police car, van, each with its own speed and handling
+- [x] **Sea traffic:** AI speedboats, fishing boats, yachts and coastguard around the coast and Palm Isle
+- [x] **Family & named NPCs:** wife in the Godzilla costume, two sons, Grandma as the Professor's mother, shopkeepers, with daily routines and 2D portrait dialogue
+
+### Phase 8 — Interiors & Quick Travel
+- [x] **Interior switcher:** E at a door → iris wipe into a separate interior scene group, then back to the same spot outside (Raptor waits outside)
+- [x] **Landmarks first:** Lab inside + Teleport Hub, Police Station with holding jail, Grandma's house; then seeded interior types (house, shop, café, office) for other buildings
+- [x] **Towers:** stairs/elevator to rooftop exits for skydiving
+- [x] **Teleport pads** in each district, island and space, plus quick travel from the map
+
+### Phase 9 — Combat, Lab Guns & Giant Mode
+- [x] **Melee:** jab → hook → spinning kick → finisher, flying kick / ground slam, sprint dropkick
+- [x] **Gadget wheel with 5 Lab Guns:** Size (shrink/normal/big), Teleport-to-Jail (works on weakened thugs), Water, Transform (animal costumes), Megaphone (sonic blast that flings)
+- [x] **Hulkbuster Giant Mode:** armour modules fly in and lock onto the Raptor piece by piece
+- [x] **Cheats / Extras:** unlimited turbo, unlimited water, bolt magnet, big heads, confetti water
+
+### Phase 10 — Train, Smashables & Sandbox Events
+- [x] **City train:** elevated loop with 4–5 stations; board, ride the roof or drive from the cab
+- [x] **Smashable props** that drop magnetic bolts, a multiplier bar, **Gold/Red Bricks** and **Super Build** pads (Palm Isle bridge, mega-ramps, space launch pad)
+- [x] **More events:** burning buildings, runaway train, meteor crashes, **Moon/Space Base**, optional giant monster encounters for Giant Mode
+
+### Phases 5–10 decisions (as built)
+- **Menu keys:** `Tab` or `P`, gamepad Start, the touch Menu button, the HUD menu icon. Releasing the mouse (Esc, switching windows) also opens it. The game pauses behind it with a slow camera flyover. It doubles as the title screen (Play/Continue, New Game asks twice).
+- **Shading:** four presets instead of three: Flat (no shadows), Toon (3-step cel ramp, applied by swapping materials), Standard (default), High (4K shadow map, wider shadow area, bloom).
+- **Crowds** change live: pedestrians are added or removed out of sight; cars are topped up or dropped out of sight; AI boats are added or removed.
+- **Install:** PWA manifest, network-first service worker, `beforeinstallprompt` button; iOS gets a "Share → Add to Home Screen" hint.
+- **Land ↔ space:** the hard 400 m cut was replaced by size-based LOD. Each scene object is hidden when it looks tiny from the camera, using render layers so systems' own visibility flags aren't touched. Ground, sea and merged blocks always stay.
+- **Collisions:** traffic already had kinematic colliders; people now get shoved aside by the Professor, the Raptor and driven vehicles instead of being walked through.
+- **Parachute:** Space cuts it into a skydive (13 m/s glide, 50 m/s fall, so never a meteor); Space again re-opens it. It doesn't auto-open again until you land.
+- **Treats:** you carry a cookie stock (starts at 4, Grandma tops up to 8, the café sells 3 for 10 points, shops 1 for 5). Feeding: +40 treats, full thruster, 15 s Sugar Rush.
+- **Abduction anywhere:** thieves strike anywhere the Raptor is left; the chance is higher in town than at the alarmed Lab.
+- **Boats:** a speedboat at each pier plus AI boats (speedboat, fishing boat, yacht, coastguard) looping Palm Isle and the east channel. With Follow on, the Raptor flies 5 m above and beside your boat.
+- **Cars:** one model builder for traffic and taken cars: glass cabin, seats, steering wheel, a seated driver, flashing beacons on police cars and fire trucks.
+- **4-lane roads:** the ring road (x and z = ±240) plus the avenues x = −120 and z = 120, 18 m wide. Blocks shrink to fit; some cars take the outer lane; sidewalks move out.
+- **Hills:** Uptown is a new 400 × 190 m district joined to the north edge (Observatory Hill 30 m, an east hill 14 m). The avenue x = −120 runs through a cutting and a tunnel. Palm Isle gained a 9 m lighthouse hill, and the town a 3.5 m sunken park. `floorAt(x, z, y)` takes the asker's height so the tunnel works.
+- **Family:** Grandma is the Professor's mother; the grandchildren Leo and Mia became his sons Leo (11) and Max (9); his wife Gwen wears the Godzilla suit. Routines walk simple L-shaped sidewalk routes; people "go inside" buildings (hidden), and you meet them in that interior.
+- **Interiors:** built on the fly 600 m under the town (the floor rule switches below −300 m) and torn down on leaving. Ceilings don't cast shadows so the sun still lights rooms. The Raptor can only follow you into the Lab hangar (and the Moon Base).
+- **Teleport pads:** 8 pads; the Lab hub portals work even for pads you haven't found (and switch them on).
+- **Combat:** thugs have 3 health; at 1 they are dazed for 14 s, and only then does the Teleport Gun work (+20 points, +1 jailed). A thug's punch knocks the Professor back and costs 5 bolts.
+- **Giant Mode:** visual scale only (the physics capsule stays normal), with the rider scaled back to normal size. You can't switch modes while a Titan.
+- **Bricks and cheats:** 10 Gold and 3 Red Bricks. Cheats unlock at 2/4/7 Gold (Turbo/Water/Confetti) and 1/2 Red (Magnet/Big Heads).
+- **Train:** a 1.9 km rounded-square loop at 10 m over the ring road; pillars 10 m off every intersection so cross traffic is clear. The 4 cars stop 7 s at each station. People and the Raptor on a roof are carried along by the train's movement each step.
+- **Events:** one at a time every 3–5 minutes (meteor, runaway train, Rogue Mech), and not during a mystery, race or while you're indoors. Only Titan hits (and rams or megaphones, weakly) hurt the mech, which has 10 health.
+
+---
+
+## 6. Technical Notes for the Roadmap
+
+- **Interiors:** keep one Three.js scene; build each interior as a `Group` far from the town (or hidden), swap visibility behind a CSS iris wipe, and remember the doorstep position. Seeded interiors use the building's id as the seed.
+- **Performance:** keep merging static geometry and using `InstancedMesh` for repeated props, boats and pedestrians; scale crowd density from Options; add `LOD` objects for districts seen from the sky.
+- **Height layers:** roads and districts on slopes need `floorAt` to return the right level under bridges and inside tunnels (use the nearest floor below the character).
+- **Physics budget:** solid NPC/vehicle collisions should use simple capsule/cuboid colliders and turn off for far-away agents.
+- **Install (PWA):** a manifest and small service worker in `public/`; the workflow already deploys `dist/` to raptor.situs.id.
+- **Docs:** README stays current with every change; this plan records decisions as each phase lands.

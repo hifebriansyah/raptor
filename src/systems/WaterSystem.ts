@@ -33,6 +33,14 @@ export class WaterSystem {
   private cooldown = 0;
   private readonly tmp = new THREE.Object3D();
   private readonly ignore = new Set<number>();
+  /** Confetti Water cheat: every droplet a party colour. */
+  set confetti(on: boolean) {
+    const c = new THREE.Color();
+    const party = ['#ff70a6', '#ffd166', '#06d6a0', '#4cc9f0', '#c77dff', '#ff9f1c'];
+    for (let i = 0; i < MAX; i++) this.mesh.setColorAt(i, c.set(on ? party[i % party.length] : '#ffffff'));
+    if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+    (this.mesh.material as THREE.MeshBasicMaterial).color.set(on ? '#ffffff' : '#7fdcff');
+  }
 
   constructor(
     scene: THREE.Scene,

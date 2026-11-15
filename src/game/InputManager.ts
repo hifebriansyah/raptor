@@ -19,9 +19,13 @@ export class InputManager {
   private touchStick = { x: 0, z: 0 };
   private padLook = { x: 0, y: 0 };
   private padTriggers = { lt: 0, rt: 0 };
+  private padDpad = { up: false, down: false };
   /** Borderlands-style sprint: tap Shift once and keep running until you stop. */
   private sprintLatched = false;
   private stillTime = 0;
+  /** Camera zoom steps since the last read (+ = closer). */
+  private zoomSteps = 0;
+  private zoomResetPressed = false;
   /** Time since the last keyboard/mouse event vs. pad/touch event (for UI hints). */
   lastDevice: 'keyboard' | 'gamepad' | 'touch' = 'keyboard';
 
@@ -46,6 +50,10 @@ export class InputManager {
     canvas.addEventListener('mousedown', (e) => {
       this.lastDevice = 'keyboard';
       if (e.button === 2) this.rightHeld = true;
+      if (e.button === 1) {
+        e.preventDefault();
+        this.zoomResetPressed = true;
+      }
       if (e.button === 0) {
         if (document.pointerLockElement !== canvas) {
           // Some browsers return a promise that rejects when lock isn't allowed (iframes, hidden tabs);
@@ -71,6 +79,36 @@ export class InputManager {
       }
     });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    canvas.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        this.zoomSteps += -Math.sign(e.deltaY) * Math.min(3, Math.max(1, Math.abs(e.deltaY) / 100));
+      },
+      { passive: false },
+    );
+  }
+
+  /** Zoom in (+) / out (−) by buttons, e.g. the HUD zoom icons. */
+  zoomBy(steps: number): void {
+    this.zoomSteps += steps;
+  }
+
+  resetZoom(): void {
+    this.zoomResetPressed = true;
+  }
+
+  /** Zoom request since the last call: steps (+ closer) and whether to reset. */
+  consumeZoom(dt: number): { steps: number; reset: boolean } {
+    let steps = this.zoomSteps;
+    if (this.any(['Equal', 'NumpadAdd'], this.down)) steps += dt * 4;
+    if (this.any(['Minus', 'NumpadSubtract'], this.down)) steps -= dt * 4;
+    if (this.padDpad.up) steps += dt * 4;
+    if (this.padDpad.down) steps -= dt * 4;
+    const reset = this.zoomResetPressed || this.any(['Digit0', 'Numpad0', 'Pad:RS'], this.pressed);
+    this.zoomSteps = 0;
+    this.zoomResetPressed = false;
+    return { steps, reset };
   }
 
   get locked(): boolean {
@@ -80,6 +118,11 @@ export class InputManager {
   /** Read the gamepad and update the sprint latch once per rendered frame. */
   poll(dt: number): void {
     this.pollPad(dt);
+    // Arrow keys turn and tilt the camera like the mouse (WASD moves)
+    const turn = (this.isDown('ArrowRight') ? 1 : 0) - (this.isDown('ArrowLeft') ? 1 : 0);
+    const tilt = (this.isDown('ArrowDown') ? 1 : 0) - (this.isDown('ArrowUp') ? 1 : 0);
+    this.mouseDX += turn * dt * 700;
+    this.mouseDY += tilt * dt * 450;
     // Sprint stays on while you keep moving; stopping (or free-aiming) ends it
     const a = this.moveAxis();
     this.stillTime = Math.hypot(a.x, a.z) < 0.15 ? this.stillTime + dt : 0;
@@ -93,6 +136,7 @@ export class InputManager {
       this.stick = { x: 0, z: 0 };
       this.padLook = { x: 0, y: 0 };
       this.padTriggers = { lt: 0, rt: 0 };
+      this.padDpad = { up: false, down: false };
       return;
     }
     const dz = (v: number) => (Math.abs(v) < 0.15 ? 0 : v);
@@ -101,6 +145,7 @@ export class InputManager {
     this.mouseDX += this.padLook.x * dt * 900;
     this.mouseDY += this.padLook.y * dt * 700;
     this.padTriggers = { lt: pad.buttons[6]?.value ?? 0, rt: pad.buttons[7]?.value ?? 0 };
+    this.padDpad = { up: !!pad.buttons[12]?.pressed, down: !!pad.buttons[13]?.pressed };
     const names = ['A', 'B', 'X', 'Y', 'LB', 'RB', 'LT', 'RT', 'Back', 'Start', 'LS', 'RS'];
     names.forEach((n, i) => {
       const code = `Pad:${n}`;
@@ -155,9 +200,9 @@ export class InputManager {
 
   /** Movement intent: x = strafe right, z = forward. Length ≤ 1. */
   moveAxis(): { x: number; z: number } {
-    const k = (a: string, b: string) => (this.isDown(a) || this.isDown(b) ? 1 : 0);
-    let x = k('KeyD', 'ArrowRight') - k('KeyA', 'ArrowLeft') + this.stick.x + this.touchStick.x;
-    let z = k('KeyW', 'ArrowUp') - k('KeyS', 'ArrowDown') + this.stick.z + this.touchStick.z;
+    const k = (code: string) => (this.isDown(code) ? 1 : 0);
+    let x = k('KeyD') - k('KeyA') + this.stick.x + this.touchStick.x;
+    let z = k('KeyW') - k('KeyS') + this.stick.z + this.touchStick.z;
     const len = Math.hypot(x, z);
     if (len > 1) {
       x /= len;
@@ -184,7 +229,12 @@ export class InputManager {
   }
 
   get cancel(): boolean {
-    return this.any(['Escape', 'Pad:B', 'Pad:Start'], this.pressed);
+    return this.any(['Escape', 'Pad:B'], this.pressed);
+  }
+
+  /** Open / close the menu: Tab, P, gamepad Start, the touch Menu button. */
+  get menuToggle(): boolean {
+    return this.any(['Tab', 'KeyP', 'Pad:Start', 'Touch:Menu'], this.pressed);
   }
 
   get jump(): boolean {
@@ -215,11 +265,10 @@ export class InputManager {
   }
 
   /** Mode switch request: 1/2/3 direct, Q / RB / touch to cycle. */
-  modeRequest(): 'walk' | 'flight' | 'race' | 'boat' | 'cycle' | null {
+  modeRequest(): 'walk' | 'flight' | 'race' | 'cycle' | null {
     if (this.pressed.has('Digit1')) return 'walk';
     if (this.pressed.has('Digit2')) return 'flight';
     if (this.pressed.has('Digit3') || this.pressed.has('KeyV')) return 'race';
-    if (this.pressed.has('Digit4') || this.pressed.has('KeyB')) return 'boat';
     if (this.any(['KeyQ', 'Pad:RB', 'Pad:Y', 'Touch:Mode'], this.pressed)) return 'cycle';
     return null;
   }
@@ -227,6 +276,33 @@ export class InputManager {
   /** Toggle the Raptor following you around on foot (F). */
   get toggleFollow(): boolean {
     return this.pressed.has('KeyF');
+  }
+
+  /** Use a cookie: feed the Raptor, or throw one as a lure (T / gamepad Back). */
+  get treat(): boolean {
+    return this.any(['KeyT', 'Pad:Back'], this.pressed);
+  }
+
+  /** Punch / kick (X on foot; giant punch on the Raptor in Giant Mode). */
+  get melee(): boolean {
+    return this.any(['KeyX', 'Pad:B', 'Touch:Punch'], this.pressed);
+  }
+
+  /** Gadget wheel: next Lab Gun (Z), or pick one with 1–5 (on foot). */
+  gunRequest(): 'cycle' | 0 | 1 | 2 | 3 | 4 | null {
+    if (this.any(['KeyZ', 'Pad:Y', 'Touch:Gun'], this.pressed)) return 'cycle';
+    for (let i = 0; i < 5; i++) if (this.pressed.has(`Digit${i + 1}`)) return i as 0 | 1 | 2 | 3 | 4;
+    return null;
+  }
+
+  /** Giant Mode (G, on the Raptor). */
+  get giantToggle(): boolean {
+    return this.pressed.has('KeyG');
+  }
+
+  /** Quick-travel map (N). */
+  get mapToggle(): boolean {
+    return this.pressed.has('KeyN');
   }
 
   /** Call the Raptor to you (R). */
@@ -253,5 +329,5 @@ export class InputManager {
 }
 
 function isGameKey(code: string): boolean {
-  return code === 'Space' || code.startsWith('Arrow') || code === 'ControlLeft';
+  return code === 'Space' || code.startsWith('Arrow') || code === 'ControlLeft' || code === 'Tab';
 }
